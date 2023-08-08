@@ -54,3 +54,8 @@
 |<center>capture</center>|버블링 단계가 아닌 캡쳐 단계에서 이벤트 핸들러를 실행함|
 |<center>once</center>|이벤트 핸들러를 단 한번만 실행하도록 함|
 |<center>self</center>|'e.target'과 이벤트 핸들러를 정의한 요소가 같은 때 이벤트 핸들러를 실행하도록 함.|
+
+## Props
+
+-   Props는 properties의 줄임말
+-   부모 컴퍼넌트가 자손 컴포넌트에게 전달해주는 값
