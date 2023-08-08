@@ -22,3 +22,35 @@
 -   변수로 선언된 값을 참조하는 새로운 변수를 만들 때 앞에 붙여줌.
 -   `var`, `let`, `const` 등의 키워드를 쓰지 않음
 -   변수 값이 변경되면 자동으로 감지하여 함께 변경이 된다.
+
+## Event
+
+-   자바스크립트가 명령을 주는 시점
+-   마우스 클릭, 키보드 입력, 스크롤 바 등
+
+| <center>이벤트명</center>   | <center>설명</center>                   |
+| --------------------------- | --------------------------------------- |
+| <center>click</center>      | 요소에서 마우스를 클릭했을 때           |
+| <center>mouseenter</center> | 요소에 마우가 들어갔을 때               |
+| <center>mouseleave</center> | 요소에서 마우스가 떠났을 때             |
+| <center>mousemove</center>  | 요소에서 마우스를 움직일 때             |
+| <center>keydown</center>    | 키보드를 눌렀을 때(특수키 인식)         |
+| <center>keyup</center>      | 눌렀던 키에서 뗄 때                     |
+| <center>keypress</center>   | 키보드를 눌렀을 때(특수키 미인식)       |
+| <center>scroll</center>     | 페이지 스크롤 바의 이동이 발생되었을 때 |
+| <center>resize</center>     | 브라우저 창 크기가 변경되었을 때        |
+
+### Event Modifiers(이벤트 수식어)
+
+-   Svelte는 이벤트를 제어할 때 조건을 붙이는 수식어도 함께 사용할 수 있다.
+-   대표적으로 `once`, 단어 뜻 그대로 한 번만 발생하도록 한다.
+
+**종류**
+| <center>수식어</center> | <center>설명</center> |
+| --------------------------- | --------------------------------------- |
+|<center>preventDefault</center>|'e.preventDefault()'를 호출, 이벤트가 발생한 태그의 기본 이벤트를 막음.|
+|<center>stopPropagation</center>|'e.stopPropagation()'을 호출. 발생한 이벤트가 겹쳐진 상위 요소로 전달되지 않게 막음.|
+|<center>passive</center>|터치 혹은 휠 이벤트로 발생하는 스크롤 성능을 향상시킴|
+|<center>capture</center>|버블링 단계가 아닌 캡쳐 단계에서 이벤트 핸들러를 실행함|
+|<center>once</center>|이벤트 핸들러를 단 한번만 실행하도록 함|
+|<center>self</center>|'e.target'과 이벤트 핸들러를 정의한 요소가 같은 때 이벤트 핸들러를 실행하도록 함.|
