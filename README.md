@@ -80,3 +80,34 @@
 ```
 
 ### each Block
+
+```
+//기본 each block
+{#each data as datum}
+    {datum}
+{/each}
+
+//each block - 인덱스 제공
+{#each data as datum,i}
+    {i} : {datum}
+{/each}
+
+//객체 데이터 방식으로 반복 처리
+{#each data as datum}
+    {datum.id}
+{/each}
+
+{#each data as {속성명1, 속성명2}}
+    {속성명1}, {속성명2};
+{/each}
+```
+
+## Binding
+
+-   바인딩은 상태 값과 그 값을 제어하는 요소와의 결합을 의미.
+-   데이터를 입력하는 다양한 폼과 함께 사용
+-   `svelte`에서는 양방향 바인딩을 이용해서 동시에 값이 변경되게 처리
+
+```
+<태그요소 bind:태그속성={상태값}>
+```
