@@ -29,6 +29,10 @@
 	function selectChange(){
 		if(selected!=null) window.open(selected);
 	}
+
+	//select value 바인딩 - 여러 개 처리
+	let foods = ["떡볶이", "라면", "치킨", "오뎅"];
+	let selectedFood = '';
 </script>
 
 <!-- input text value 바인딩 -->
@@ -88,3 +92,6 @@
 		 <option value={site.url}>{site.name}</option>
 	{/each}
 </select>
+<hr/>
+
+<!-- select -->
