@@ -45,7 +45,7 @@
 -   Svelte는 이벤트를 제어할 때 조건을 붙이는 수식어도 함께 사용할 수 있다.
 -   대표적으로 `once`, 단어 뜻 그대로 한 번만 발생하도록 한다.
 
-**종류**
+**종류**  
 | <center>수식어</center> | <center>설명</center> |
 | --------------------------- | --------------------------------------- |
 |<center>preventDefault</center>|'e.preventDefault()'를 호출, 이벤트가 발생한 태그의 기본 이벤트를 막음.|
@@ -124,7 +124,7 @@
 
 ### +page
 
-**+page.svelte**
+**+page.svelte**  
 `+page.svelte` 요소는 앱의 페이지를 정의한다. 기본적으로 메이지는 초기 요청을 위해 서버와 후속 탐색을 위해 브라우저 둘 모두에서 렌더링된다.
 
 ```
@@ -163,7 +163,7 @@
         export const ssr = true/false
         export const csr = true/false`
 
-**+page.server.js**
+**+page.server.js**  
 `load` 함수가 서버에서만 동작한다면 `+page.js`를 `+page.server.js`로 이름을 바꾸고 `PageLoad` 타입을 `PageServerLoad`로 바꿀 수 있다.
 
 ```
@@ -184,7 +184,7 @@
 클라이언트 측 탐색동안, `SvelteKit`은 서버로부터 데이터를 불러온다. 즉 변환 값은 반드시 devalue를 사용해서 직렬화 되어야 한다.
 `+page.server.js`는 동작을 내보낼 수 있다. load가 서버로부터 데이터를 읽을 수 있게 한다면, action은 `<form>`을 사용해서 서버에 데이터를 쓸 수 있게 한다.
 
-**+error**
+**+error**  
 load 동안 에러가 발생한다면, SvelteKit은 기본 에러 페이지를 렌더링할 것이다. `+error.svelte`를 추가해 에러페이지를 커스터마이징 할 수 있다.
 
 ```
@@ -202,7 +202,7 @@ src/routes/blog/ 경로에서 +error.svelte이 없으면 src/routes/에서 +erro
 
 많은 앱에서 모든 페이지에서 최상위 네비게이션이나 footer같은 것들이 보여져야한다. 모든 `+page.svelte`에서 반복하기보단 layout에 집어 넣는다.
 
-**+layout.svelte**
+**+layout.svelte**  
 모든 페이지에 적용될 레이아웃을 만들기 위해 `+src/routes/+layout.svelte`를 만들야한다.
 기본 레이아웃은 다음과 같다.
 
@@ -255,7 +255,7 @@ src/routes/blog/ 경로에서 +error.svelte이 없으면 src/routes/에서 +erro
 
 기본적으로 각 레이아웃은 상위 레이아웃을 상속받는다.
 
-**+layout.js**
+**+layout.js**  
 `+page.js`에서 `+page.svelte`가 데이터를 로딩하는 것처럼 `+layout.svelte`도 `+layout.js`에서 데이터를 로딩한다.
 
 ```
@@ -270,7 +270,7 @@ src/routes/blog/ 경로에서 +error.svelte이 없으면 src/routes/에서 +erro
     }
 ```
 
-**+layout.server.js**
+**+layout.server.js**  
 레이아웃의 로드 함수를 서버에서 동작시키기 위해 `+layout.sever.js`로 옮겨야 한다. 그리고 타입을 `LayoutLoad`에서 `LayoutServerLoad`로 변경해야 한다.
 
 ### +server
@@ -302,7 +302,7 @@ src/routes/blog/ 경로에서 +error.svelte이 없으면 src/routes/에서 +erro
 편의를 위해 `@sveltejs/kit`의 error, redirect, json을 사용할 수 있다.
 에러가 발생하면 응답은 에러의 json형태나 에러 페이지를 반환한다. 이 경우 `+error.svelte`가 렌더링 되지 않는다.
 
-**Receiving data**
+**Receiving data**  
 POST/PUT/PATCH/DELETE/OPTION/HEAD 핸들러를 내보내서 `+server.js`는 완전한 API를 만드는데 사용될 수 있다.
 
 ```
@@ -385,11 +385,11 @@ POST/PUT/PATCH/DELETE/OPTION/HEAD 핸들러를 내보내서 `+server.js`는 완�
 -   server : 서버에서만 동작한다.
     `+page.server.js`, `layout.server.js`
 
-**언제, 어떤 `load`함수가 동작하나?**
+**언제, 어떤 `load`함수가 동작하나?**  
 `server` 함수는 항상 서버에서 동작한다.
 기본적으로 `universal`함수는 사용자가 처음 페이지를 방문했을 때 SSR 동안, 즉 서버 측에서 렌더링될 동안 동작한다. 서버 측 랜더링을 비활성화하면 단일 페이지 앱을 얻을 수 있고, `universal` 함수는 항상 클라이언트에서 동작한다.
 
-**Input**
+**Input**  
 `universal`과 `server` 모두 요청을 묘사하는 속성ㅇ과 다양한 기능에 액세스 할 수 있다.
 
 -   서버 load 함수는 `ServerLoadEvent`라고 불린다. 이는 `RequestEvent`로부터 clientAddress, cookies, locals, platform, request를 상속한다.
@@ -412,10 +412,10 @@ POST/PUT/PATCH/DELETE/OPTION/HEAD 핸들러를 내보내서 `+server.js`는 완�
 
 > `load` function은 URL에 따라 어느 방식으로든 달라진다.
 
-**url**
+**url**  
 원본, hostname, pathname, searchParams와 같은 속성을 포함하는 URL의 인스턴스. `url.hash`에 `load`하는 동안 접근할 수 없다.
 
-**route**
+**route**  
 현재 라우트 디렉터리의 이름을 포함한다.
 
 ```
@@ -426,7 +426,7 @@ POST/PUT/PATCH/DELETE/OPTION/HEAD 핸들러를 내보내서 `+server.js`는 완�
     }
 ```
 
-**params**
+**params**  
 `params`은 `url.pathname`과 `route.id`로부터 파생되었다.
 route.id가 /a/[b]/[...c]이고 url.pathname이 /a/x/y/z일때, params 객체는 다음과 같다.
 
@@ -440,7 +440,8 @@ route.id가 /a/[b]/[...c]이고 url.pathname이 /a/x/y/z일때, params 객체는
 ### Making fetch requests
 
 > 외부 API나 `+server.js` 핸들러로부터 데이터를 얻고자할 때, `fetch`를 사용한다. 이는 몇 추가된 기능과 함께 기존의 fetch 웹 API과 동일하게 동작한다.
-> **Additional features**
+
+**Additional features**
 
 -   cookie와 authorization 헤더를 상속해 자격증명 요청하는데 사용될 수 있다.
 -   서버에서 상대적인 요청을 할 수 있다.
@@ -731,7 +732,7 @@ export async function load() {
 
 ```
 
-**언제 _load_ 함수가 재실행될까?**
+**언제 _load_ 함수가 재실행될까?**  
 요약하자면, _load_ 함수는 다음과 같은 상황에 재실행된다.
 
 -   값이 변경된 매개변수의 속성을 참조할 때
