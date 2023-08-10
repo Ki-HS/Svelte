@@ -159,10 +159,9 @@
 
 이 함수는 `+page.svelte`와 함께 동작한다. 즉 서버 측 렌더링 동안에는 서버에서 동작하고 클라이언트 측 탐색 동안에는 브라우저에도 동작한다.
 `+page.js`는 `load`뿐만 아니라 페이지 동작을 구성하는 값도 내보낼 수 있다.
-`     export const prerennder = true/false/auto
+`    export const prerennder = true/false/auto
         export const ssr = true/false
-        export const csr = true/false
-`
+        export const csr = true/false`
 
 **+page.server.js**
 `load` 함수가 서버에서만 동작한다면 `+page.js`를 `+page.server.js`로 이름을 바꾸고 `PageLoad` 타입을 `PageServerLoad`로 바꿀 수 있다.
@@ -462,5 +461,284 @@ route.id가 /a/[b]/[...c]이고 url.pathname이 /a/x/y/z일때, params 객체는
 ```
 
 ### Cookies
+
+| server `load` 함수는 쿠키를 얻고 설정할 수 있다.
+
+```
+    // src/routes/+layout.server.js
+    import * as db from '$lib/server/database';
+
+    /** @type {import('./$types').LayoutServerLoad} */
+    export async function load({ cookies }) {
+    const sessionid = cookies.get('sessionid');
+
+    return {
+        user: await db.getUser(sessionid)
+    };
+    }
+```
+
+쿠키는 만약 타켓 호스트가 SvelteKit 앱이나 그것의 더 특정한 하위도메인과 같다면 오직 제공된 fetch 함수로만 통할 수 있다.
+
+-   domain.com -> 쿠키 못 받음
+-   my.domain.com -> 쿠키 받음
+-   api.domain.dom 쿠키 못 받음
+-   sub.my.domain.com -> 쿠키 받음
+
+다른 쿠키는 `credentials: 'include'`가 설정되어 있을 때는 SvelteKit이 어떤 쿠키가 어떤 도메인에 속해 있는지 모르기 때문에 통과할 수 없다.
+
+### Headers
+
+server, universal `load` 함수 둘다 서버에서 동작 중일 때 응답에 대한 헤더를 설정할 수 있는 `setHeader` 함수에 접근할 수 있다.
+페이지 캐시할 때 유용하다.
+
+```
+    //+page.js
+    /** @type {import('./$types').PageLoad} */
+    export async function load({ fetch, setHeaders }) {
+    const url = `https://cms.example.com/products.json`;
+        const response = await fetch(url);
+
+        // cache the page for the same length of time
+        // as the underlying data
+        setHeaders({
+            age: response.headers.get('age'),
+            'cache-control': response.headers.get('cache-control')
+        });
+
+        return response.json();
+    }
+```
+
+같은 헤더를 여러번 세팅하는 것은 오류가 발생할 수 있다. `setHeaders`로 `set-cookie` 헤더를 추가할 수 없고, cookies.set(name,value, option)을 사용해야 한다.
+
+### Using parent data
+
+load 함수가 `await parent()`를 사용해서 부모 load 함수의 데이터에 접근하는 것은 유용하다.
+
+```
+    //src/routes/+layout.js
+    /** @type {import('./$types').LayoutLoad} */
+    export function load() {
+        return { a: 1 };
+    }
+
+    //src/routes/abc/+layout.js
+    /** @type {import('./$types').LayoutLoad} */
+    export async function load({ parent }) {
+        const { a } = await parent();
+        return { b: a + 1 };
+    }
+
+    //src/routes/abc/+page.js
+    /** @type {import('./$types').PageLoad} */
+    export async function load({ parent }) {
+        const { a, b } = await parent();
+        return { c: a + b };
+    }
+
+    //src/routes/abc/+page.svelte
+    <script>
+  /** @type {import('./$types').PageData} */
+    e   xport let data;
+    </script>
+
+    <!-- renders `1 + 2 = 3` -->
+    <p>{data.a} + {data.b} = {data.c}</p>
+```
+
+> `+page.js`안에 있는 load 함수는 부모의 데이터를 바로 받는 것이 아니라 두 레이아웃 load 함수의 병합된 데이터를 받는다.
+
+`+page.server.js`와 `+layout.server.js` 내부에서 `parent`는 부모 `layout.server.js`의 데이터를 반환한다.
+`+page.js`나 `+layout.js`에서 부모 `+layout.js`로부터의 데이터를 반환한다.
+누락된 `+layout.js`는 `({ data }) => data function`로 처리된다. 즉, `+layout.js`에 의해 가려지지 않은 부모 `+layout.server.js`의 데이터도 반환한다.
+
+`await parent()`를 사용할때 *waterfalls*이 발생하지 않도록 주의해야 한다.
+
+```
+    /** @type {import('./$types').PageLoad} */
+    export async function load({ params, parent }) {
+        const parentData = await parent();
+        const data = await getData(params);
+        const parentData = await parent();
+
+        return {
+            ...data
+            meta: { ...parentData.meta, ...data.meta }
+        };
+    }
+
+    getData(params)은 parent() 호출의 결과에 의존하지 않으므로 지연된 렌더를 피하기 위해 먼저 호출해야 한다.
+```
+
+### Errors
+
+> load 동안 에러가 throw 된다면, 가장 가까운 `+error.svelte`가 렌더링 된다. _예상된_ 에러에 대해 `@sveltejs/kit`의 error helper을 사용해서 HTTP 상태 코트와 선택적 메시지를 특정한다.
+
+```
+import { error } from '@sveltejs/kit';
+ 
+/** @type {import('./$types').LayoutServerLoad} */
+export function load({ locals }) {
+  if (!locals.user) {
+    throw error(401, 'not logged in');
+  }
+ 
+  if (!locals.user.isAdmin) {
+    throw error(403, 'not an admin');
+  }
+}
+```
+
+_예상되지 않은_ 에러가 발생하면, SvelteKit은 `handleError`을 호출하고 500 Internal Error로 다룰 것이다.
+
+### Redirects
+
+> 사용자들을 리다이렉트 하기 위해 3xx 상태 코드와 함께 리디렉션할 위치를 지정하는 `@sveltejs/kit`의 redirect helper를 사용한다.
+
+```
+//+layout.server.js
+import { redirect } from '@sveltejs/kit';
+ 
+/** @type {import('./$types').LayoutServerLoad} */
+export function load({ locals }) {
+  if (!locals.user) {
+    throw redirect(307, '/login');
+  }
+}
+```
+
+### Streaming with promises
+
+> 반환된 객체의 상위 레벨에 있는 Promises는 대기되어 *waterfalls*를 만들지 않고 여러 Promises를 쉽게 반환할 수 있다. server load를 사용할 때, _중첩된_ Promises은 해결된대로 브라우저로 스트리밍된다. 이는 모든 데이터가 사용 가능해지기 전에 페이지 렌더링을 시작할 수 있기 때문에 필요하지 않고, 느린 데이터가 있으면 유용하다.
+
+```
+//+page.server.js
+/** @type {import('./$types').PageServerLoad} */
+export function load() {
+  return {
+    one: Promise.resolve(1),
+    two: Promise.resolve(2),
+    streamed: {
+      three: new Promise((fulfil) => {
+        setTimeout(() => {
+          fulfil(3)
+        }, 1000);
+      })
+    }
+  };
+}
+
+//로딩 단계를 만들 때 유용하다.
+//+page.svelte
+<script>
+  /** @type {import('./$types').PageData} */
+  export let data;
+</script>
+
+<p>
+  one: {data.one}
+</p>
+<p>
+  two: {data.two}
+</p>
+<p>
+  three:
+  {#await data.streamed.three}
+    Loading...
+  {:then value}
+    {value}
+  {:catch error}
+    {error.message}
+  {/await}
+</p>
+```
+
+### Parallel loading
+
+> 페이지를 렌더링하거나 탐색할 때, SvelteKit은 요청의 *waterfalls*을 피하기 위해 모든 load 함수를 동시에 동작한다.
+> 클라이언트 측 탐색 동안 다중 server load 함수 호출의 결과는 단일 응답으로 묶인다. 한번 모든 load 함수가 반환되면 페이지가 렌더링된다.
+
+### Rerunning load functions
+
+> SvelteKit은 탐색동안 불필요하게 재동작을 피하기 위해 각 load 함수의 의존성을 추적한다.
+
+```
+//+page.server.js
+import * as db from '$lib/server/database';
+ 
+/** @type {import('./$types').PageServerLoad} */
+export async function load({ params }) {
+  return {
+    post: await db.getPost(params.slug)
+  };
+}
+
+//+layout.server.js
+import * as db from '$lib/server/database';
+ 
+/** @type {import('./$types').LayoutServerLoad} */
+export async function load() {
+  return {
+    posts: await db.getPostSummaries()
+  };
+}
+```
+
+    ...params.slug가 변경되었기 때문에 /blog/trying-the-raw-meat-diet에서 /blog/i-regret-my-choice로 이동하면 +page.js에 있는 데이터가 다시 실행됩니다. 데이터가 여전히 유효하므로 +layout.server.js에 있는 데이터는 다시는 db.getPostSummaries()를 호출하지 않습니다.
+
+`await parent()`를 호출한 _load_ 함수는 부모 _load_ 함수가 재동작하면 같이 재동작한다.
+
+의존성 추적은 _load_ 함수가 반환된 후에 적용되지 않는다.
+
+### Manual invalidation
+
+> url에 의존하는 모든 _load_ 함수를 다시 실행하는 `invalidate(url)`와 모든 _load_ 함수를 다시 실행하는 `invalidateAll()`을 사용하여 현재 페이지에 적용되는 _load_ 함수를 다시 실행할 수도 있다.
+> _load_ 함수는 `fetch(url)이나 (depends(url)을 호출한다면 url에 의존한다. url이 [a-z]로 시작하는 사용자 지정 식별자가 될 수 있음을 알아야 한다.
+
+```
+    /** @type {import('./$types').PageLoad} */
+    export async function load({ fetch, depends }) {
+        // load reruns when `invalidate('https://api.example.com/random-number')` is called...
+        const response = await fetch('https://api.example.com/random-number');
+         
+        // ...or when `invalidate('app:random')` is called
+        depends('app:random');
+         
+        return {
+            number: await response.json()
+        };
+    }
+
+    //+page.svelte
+    <script>
+    import { invalidate, invalidateAll } from '$app/navigation';
+
+    /** @type {import('./$types').PageData} */
+    export let data;
+
+    function rerunLoadFunction() {
+        // any of these will cause the `load` function to rerun
+        invalidate('app:random');
+        invalidate('https://api.example.com/random-number');
+        invalidate(url => url.href.includes('random-number'));
+        invalidateAll();
+    }
+    </script>
+
+    <p>random number: {data.number}</p>
+    <button on:click={rerunLoadFunction}>Update random number</button>
+
+```
+
+**언제 _load_ 함수가 재실행될까?**
+요약하자면, _load_ 함수는 다음과 같은 상황에 재실행된다.
+
+-   값이 변경된 매개변수의 속성을 참조할 때
+-   값이 변경된 url의 속성을 참조할 때. 이때 `requeset.url`의 속성은 추적되지 않는다.
+-   `await parent()`를 호출하고 parent load 함수가 재실행되었을 때
+-   `fetch`, `depend`을 통한 url과 `invalidate(url)`로 invalid 마크된 url에 종속성을 선언했을 때
+-   활성화된 모든 _load_ 함수가 `invalidateAll()`을 사용하여 강제로 다시 실행되었을 때
+    parmas와 url은 <a href=".."> 링크 클릭, <form> 상호작용, goto 호출, 리디렉션 등의 응답으로 바뀔 수 있다.
 
 ## Fetching Data
