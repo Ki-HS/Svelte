@@ -742,4 +742,269 @@ export async function load() {
 -   활성화된 모든 _load_ 함수가 `invalidateAll()`을 사용하여 강제로 다시 실행되었을 때
     parmas와 url은 <a href=".."> 링크 클릭, <form> 상호작용, goto 호출, 리디렉션 등의 응답으로 바뀔 수 있다.
 
+## Form actions
+
+`+page.server.js`는 `<form>`을 사용해서 데이터를 서버로 **POST**하도록 하는 *actions*을 내보낼 수 있다.
+`<form>`을 사용할 때, 클라이언트 측 자바스크립트는 옵션이지만 자바스크립트를 사용해서 form 상호작용을 최상의 UX를 제공할 수 있다.
+
+### Default actions
+
+```
+//+page.server.js
+/** @type {import('./$types').Actions} */
+export const actions = {
+  default: async (event) => {
+    // TODO log the user in
+  }
+};
+
+//+page.svelte
+<form method="POST">
+  <label>
+    Email
+    <input name="email" type="email">
+  </label>
+  <label>
+    Password
+    <input name="password" type="password">
+  </label>
+  <button>Log in</button>
+</form>
+```
+
+버튼을 누르면 POST 요청을 통해 form 데이터가 서버로 전송된다.
+
+### Named actions
+
+```
+//+page.server.js
+/** @type {import('./$types').Actions} */
+export const actions = {
+	login: async (event) => {
+    // TODO log the user in
+  },
+	register: async (event) => {
+		// TODO register the user
+	}
+};
+
+//+page.svelte
+<form method="POST" action="?/register">
+
+//+layout.svelte
+<form method="POST" action="/login?/register">
+```
+
+`action` 속성뿐만 아니라 버튼의 `formaction` 속성을 사용해 동일한 폼 데이터를 상위 `<form>`과 다른 액션을 POST할 수 있다.
+
+```
+//+page.svelte
+<form method="POST">
+<form method="POST" action="?/login">
+  <label>
+    Email
+    <input name="email" type="email">
+  </label>
+  <label>
+    Password
+    <input name="password" type="password">
+  </label>
+  <button>Log in</button>
+	<button formaction="?/register">Register</button>
+</form>
+```
+
+## Anatomy of an action
+
+> 각 액션은 `RequestEvent` 객체를 수신하여 `request.formData()`로 데이터를 읽을 수 있다.
+> 요청을 처리한 후, 액션은 해당 페이지의 양식 속성과 `$page.form app-wide`를 통해 다음 업데이트까지 사용할 수 있는 데이터로 응답할 수 있습니다.
+
+```
+//+page.server.js
+/** @type {import('./$types').PageServerLoad} */
+export async function load({ cookies }) {
+  const user = await db.getUserFromSession(cookies.get('sessionid'));
+  return { user };
+}
+ 
+/** @type {import('./$types').Actions} */
+export const actions = {
+  login: async ({ cookies, request }) => {
+    const data = await request.formData();
+    const email = data.get('email');
+    const password = data.get('password');
+ 
+    const user = await db.getUser(email);
+    cookies.set('sessionid', await db.createSession(user));
+ 
+    return { success: true };
+  },
+  register: async (event) => {
+    // TODO register the user
+  }
+};
+
+//+page.svelte
+<script>
+  /** @type {import('./$types').PageData} */
+  export let data;
+
+  /** @type {import('./$types').ActionData} */
+  export let form;
+</script>
+
+{#if form?.success}
+  <!-- this message is ephemeral; it exists because the page was rendered in
+       response to a form submission. it will vanish if the user reloads -->
+  <p>Successfully logged in! Welcome back, {data.user.name}</p>
+{/if}
+```
+
+**Validation errors**
+유효하지 않은 데이터때문에 요청이 처리될 수 없다면, 사용자에게 보내 다시 시도할 수 있도록 *validation error*을 반환한다. `fail` 함수는 HTTP 상태 코드(400,422)를 데이터와 함께 반환한다. 상태 코드는 `$page.status`와 form을 통한 데이터를 통해 이용할 수 있다.
+
+```
+//+page.server.js
+import { fail } from '@sveltejs/kit';
+
+/** @type {import('./$types').Actions} */
+export const actions = {
+  login: async ({ cookies, request }) => {
+    const data = await request.formData();
+    const email = data.get('email');
+    const password = data.get('password');
+
+		if (!email) {
+			return fail(400, { email, missing: true });
+		}
+
+    const user = await db.getUser(email);
+
+		if (!user || user.password !== hash(password)) {
+			return fail(400, { email, incorrect: true });
+		}
+
+    cookies.set('sessionid', await db.createSession(user));
+
+    return { success: true };
+  },
+  register: async (event) => {
+    // TODO register the user
+  }
+};
+
+//+page.svelte
+<form method="POST" action="?/login">
+	{#if form?.missing}<p class="error">The email field is required</p>{/if}
+	{#if form?.incorrect}<p class="error">Invalid credentials!</p>{/if}
+  <label>
+    Email
+		<input name="email" type="email">
+		<input name="email" type="email" value={form?.email ?? ''}>
+  </label>
+  <label>
+    Password
+    <input name="password" type="password">
+  </label>
+  <button>Log in</button>
+  <button formaction="?/register">Register</button>
+</form>
+```
+
+반환 값은 JSON처럼 나열되어 있어야 한다. 그 이상의 구조는 당신에게 달려있다. 예를 들어, 페이지에 다중 폼을 가지고 있다면, 어떤 폼이 id 속성이나 유사한 속성으로 참조되는 판환된 fomr 데이터가 어떤 `<form>`인지 구별할 수 있다.
+
+**Redirects**
+리다이렉트는 정확히 `load`에서처럼 동작한다.
+
+```
+//+page.server.js
+import { fail, redirect } from '@sveltejs/kit';
+
+/** @type {import('./$types').Actions} */
+export const actions = {
+	login: async ({ cookies, request, url }) => {
+    const data = await request.formData();
+    const email = data.get('email');
+    const password = data.get('password');
+
+    const user = await db.getUser(email);
+    if (!user) {
+      return fail(400, { email, missing: true });
+    }
+
+    if (user.password !== hash(password)) {
+      return fail(400, { email, incorrect: true });
+    }
+
+    cookies.set('sessionid', await db.createSession(user));
+
+		if (url.searchParams.has('redirectTo')) {
+			throw redirect(303, url.searchParams.get('redirectTo'));
+		}
+
+    return { success: true };
+  },
+  register: async (event) => {
+    // TODO register the user
+  }
+};
+```
+
+### Loading data
+
+> *action*이 실행된 후, 페이지는 액션의 반환값을 form 속성으로 사용할 수 있도록 다시 렌더링될 것이다. 이는 페이지 load 함수가 action이 끝난 후 동작함을 의미한다.
+> `handle`이 *action*이 호출되기 전에 동작되며 load 함수 전에는 다시 실행되지 않는다. 예를 들어, 쿠키를 기준으로 `event.locals`를 채우기 위해 `handle`을 사용하는 경우 action에서 쿠키를 설정하거나 지울 때 `event.locals`를 업데이트해야 한다.
+
+```
+//hooks.server.js
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+  event.locals.user = await getUser(event.cookies.get('sessionid'));
+  return resolve(event);
+}
+
+//+page.server.js
+/** @type {import('./$types').PageServerLoad} */
+export function load(event) {
+  return {
+    user: event.locals.user
+  };
+}
+ 
+/** @type {import('./$types').Actions} */
+export const actions = {
+  logout: async (event) => {
+    event.cookies.delete('sessionid');
+    event.locals.user = null;
+  }
+};
+```
+
+### Progressive enhancement
+
+> 앞의 섹션에서 클라이언트 측 자바스크립트 없이 동작하는 `/login` 액션을 구축했다. 그것도 좋지만, 자바스크립트를 사용할때 form 상호작용을 점진적으로 향상시켜 다 나은 UX를 제공할 수 있다.
+
+**use:enhance**
+fom을 향상시키는 가장 쉬운 방법은 `use:enhance` action을 추가하는 것이다.
+
+```
+//+page.svelte
+<script>
+	import { enhance } from '$app/forms';
+
+  /** @type {import('./$types').ActionData} */
+  export let form;
+</script>
+
+<form method="POST" use:enhance>
+```
+
+인자 없이, 전체 페이지 리로딩없이 `use:enhance`는 brower-native 행동을 모방할 것이다.
+
+-   form 속성, `$page.form`, `$page.status`를 성공하거나 유요하지 않는 응다브로 업데이트 한다. action이 제출하는 동일한 페이지에 있는 경우에만 해당된다. 예를 들어, `<form action="/somewhere/else" ..>`에 있을 때, form과 $page는 업데이트 되지 않는다. 기본 form 제출의 경우 action이 있는 페이지로 리디렉션되기 때문이다. 둘 중 하나를 업데이트하려면 `applyAction`을 사용해야한다.
+-   `<form>` 요소와 성공 응답의 `invalidateAll`을 사용하는 모든 무효한 데이터를 리셋한다.
+-   `goto`를 리다이렉트 응답에 호출한다.
+-   에러 발생 시가장 가까운 `+error` 경계를 렌더링한다.
+-   포커스를 적절한 요소로 재설정한다.
+
 ## Fetching Data
