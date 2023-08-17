@@ -740,7 +740,7 @@ export async function load() {
 -   `await parent()`를 호출하고 parent load 함수가 재실행되었을 때
 -   `fetch`, `depend`을 통한 url과 `invalidate(url)`로 invalid 마크된 url에 종속성을 선언했을 때
 -   활성화된 모든 _load_ 함수가 `invalidateAll()`을 사용하여 강제로 다시 실행되었을 때
-    parmas와 url은 <a href=".."> 링크 클릭, <form> 상호작용, goto 호출, 리디렉션 등의 응답으로 바뀔 수 있다.
+    parmas와 url은 `<a href="..">` 링크 클릭, <form> 상호작용, goto 호출, 리디렉션 등의 응답으로 바뀔 수 있다.
 
 ## Form actions
 
@@ -860,7 +860,7 @@ export const actions = {
 {/if}
 ```
 
-**Validation errors**
+**Validation errors**  
 유효하지 않은 데이터때문에 요청이 처리될 수 없다면, 사용자에게 보내 다시 시도할 수 있도록 *validation error*을 반환한다. `fail` 함수는 HTTP 상태 코드(400,422)를 데이터와 함께 반환한다. 상태 코드는 `$page.status`와 form을 통한 데이터를 통해 이용할 수 있다.
 
 ```
@@ -913,7 +913,7 @@ export const actions = {
 
 반환 값은 JSON처럼 나열되어 있어야 한다. 그 이상의 구조는 당신에게 달려있다. 예를 들어, 페이지에 다중 폼을 가지고 있다면, 어떤 폼이 id 속성이나 유사한 속성으로 참조되는 판환된 fomr 데이터가 어떤 `<form>`인지 구별할 수 있다.
 
-**Redirects**
+**Redirects**  
 리다이렉트는 정확히 `load`에서처럼 동작한다.
 
 ```
@@ -1115,7 +1115,7 @@ const response = await fetch(this.action, {
 });
 ```
 
-## Alternatives
+### Alternatives
 
 > form action은 점진적으로 향상될 수 있기에 데이터를 서버로 보내는데 선호되는 방식이지만, _+server.js_ 파일을 사용해서 예를 들어 JSON API를 보여줄 수 있다.
 
@@ -1138,7 +1138,7 @@ export function POST() {
 }
 ```
 
-## GET vs POST
+### GET vs POST
 
 form 동작을 호출하기 위해 `method="POST"`를 사용해야 한다.
 일부 form은 데이터를 서버로 `POST`할 필요 없다. 이 경우, `method="GET"`를 사용할 수 있고 SvelteKit는 페이지 전체 탐색 대신 클라이언트 측 라우터를 사용해 `<a>` 요소처럼 다룬다.
@@ -1153,5 +1153,165 @@ form 동작을 호출하기 위해 `method="POST"`를 사용해야 한다.
 ```
 
 이 form의 제출은 `/search?q=...`로 이동하여 load function을 호출하지만 action을 호출하진 않는다. `<a/>` 처럼, 라우터의 동작을 제어하기 위해 `<form>`의 data-svelte-reload, data-sveltekit-replacestate, data-sveltekit-keepfocus, data-sveltekit-noscroll 속성을 설정할 수 있다.
+
+## Page options
+
+기본적으로 SvelteKit은 서버에 있는 모든 컴포넌트를 처음에 렌더링하고 HTML 같이 클라이언트로 보낸다. `hydration`으로 불리는 프로세스에서 상호적으로 만들도록 브라우저에 있는 컴포넌트를 다시 렌더링한다. 이런 이유때문에 컴포넌트가 두 곳 모두에서 실행될 수 있도록 확실히 해야한다. 그 후 SvelteKit은 후속 탐색을 이어 받는 라우터를 초기화한다.
++page.js 또는 +page.server.js에서 옵션을 내보내거나 공유 +layout.js 또는 +layout.server.js를 사용하여 페이지 그룹에 대한 옵션을 페이지 단위로 제어할 수 있다. 앱 전체에 대해 옵션을 정의하기 위해 root 레이아웃에서 내보내야 한다. 하위 layout과 page는 상위 layout에서 설정된 값을 덮을 수 있다. 그래서 전체 앱에 대해 prerendering을 가능케 하고 동적으로 렌더링될 필요가 있는 페이지에 대해 prerendering을 못하게 할 수 있다.
+
+### prerender
+
+일부 라우트는 빌드 시 생성된 간단한 HTML 파일로 표시될 수 있다. 이런 라우트는 `prerender`될 수 있다.
+
+```
+export const prerender = true;
+```
+
+대신, 루트 `+layout.js`나 루트 `+layout.server.js`에서 `export const prerender = true`를 설정할 수 있고 _not prerenderable_ 마크가 있는 페이지를 제외하고 모든 것을 prerender 할 수 있다.
+
+```
+export const prerender = false;
+```
+
+서버를 작게 만들기 위해 `prerender = true`인 라우트는 동적 SSR에 사용되는 메니페스트에서 제외된다. prerender하지만 manifest에 포함되도록 하고 싶은 경우 `auto`를 사용한다.
+
+```
+export const prerender = auto;
+```
+
+전체 앱이 prerendering에 적합한 경우, `adapter-static`을 사용해 정적 웹 서버에서 사용하기에 적합한 파일을 출력할 수 있다.
+prerenderer는 앱의 root에서 시작하고 prerenderable 페이지나 `+server.js`에 대한 파일을 생성한다. 각 페이지는 prerendering의 후보인 다른 페이지를 가리키는 `<a>` 요소에 대해 스캔되었다. 이때문에 일반적으로 어떤 페이지가 접근되어야하는지 특정할 필요가 없다. 어떤 페이지에 접근해야 하는지 정말 필요하다면, *config.kit.prerender.entries*를 사용하거나 동적 라우트의 entries function를 내보내서 그렇게 할 수 있다.
+prerendering 동안, `$app/environment`에서 호출된 `building`의 값은 true다.
+
+**prerendering server routes**
+
+다른 페이지 옵션과는 달리, `prerender`은 `+server.js`에 적용된다. 이런 파일은 layout의 영향을 받지 않지만, 레이아웃의 데이터를 fetch한 페이지의 기본 값을 상속한다.
+
+```
+export const prerender = true;
+ 
+/** @type {import('./$types').PageLoad} */
+export async function load({ fetch }) {
+  const res = await fetch('/my-server-route.json');
+  return await res.json();
+}
+```
+
+그 후 `export const prerender = false`가 없다면 `+server.js`는 prerenderable하게 다뤄진다.
+
+**When not to prerender**
+
+기본 규칙은 페이지를 미리 작성할 수 있으려면 페이지를 직접 누른 두 사용자가 서버에서 동일한 내용을 가져와야 한다.
+모든 페이지가 prerendering에 적합한 것은 아니다. prerender된 모든 콘텐츠는 모든 사용자가 볼 수 있다. prerendering된 페이지의`onMount`에서 개인화된 데이터를 가져올 수 있지만, 빈 초기 콘텐츠나 로딩 표시기를 포함하기 때문에 사용자 환경이 열악해질 수 있다.
+페이지 인자에 기반한 데이터를 load하는 페이지를 계속 prerender할 수 있다.
+prerendering 동안 *url.searchParams*에 접근하는 것은 금지된다. *url.searchParams*를 사용하고 싶으면, 브라우저에서만 사용할 것이라는 것을 확실히 해야 한다.
+서버가 `POST` 응답 동작을 다룰 수 있어야 하기 때문에, actions이 있는 페이지는 prerender될 수 없다.
+
+**Prerender and ssr**  
+ssr option을 `false`로 설정했다면 같은 빈 HTML shell에서 각 요청이 발생할 것이다. 불필요한 작업에서 발생하기 때문에, SvelteKit은 기본적으로 `prerender`가 명시적으로 `false`로 설정되지 않은 페이지를 prerendering한다.
+
+**Route conflict**  
+prerendering이 파일 시스템에 쓰기 때문에, 같은 이름을 가지는 디렉터리와 파일을 발생시킬 수 있는 두 엔드포인트를 가질 수 없다.
+이런 이유로 항상 파일 확장자를 포함하는 것이 좋다.
+페이지의 경우 `foo`대신 `foo/index.html`를 사용해서 해결한다.
+
+**Troubleshooting**  
+`The following routes were marked as prerenderable, but were not prerendered`와 같은 에러를 본다면 문제의 라우터가 `export const prerender = ture`를 가졌지만 prerendering crawler에 의해 도달되지 않았기 때문에 페이지는 사실 prerender되지 않았기 때문이다.
+이러한 라우트는 동적으로 server-rendered 될 수 없기 때문에, 문제의 라우트에 접근하려고 시도할때 오류가 발생된다. 두 가지 방법으로 해결할 수 있다.
+
+1. *config.kit.prerender.entires*나 entries page option의 링크를 따라 경로를 찾을 수 있는지 확인한다. 다른 엔트리 포인트를 크롤링하는 과정을 통해 동적 라우트의 링크를 찾을 수 없는 경우 이 옵션에 링크를 추가한다. 그렇지 않으면 SvelteKit는 매개변수가 어떤 값을 가져야 하는지 모르기 때문에 prerendering 되지 않는다. prerenderable으로 표지 되지 않는 페이지는 무시되고 일부가 prerenderable하더라도 다른 페이지에 대한 링크는 크롤링되지 않는다.
+2. `export const parameter = true`를 `export const parameter = 'auto'`로 바꾼다. `'auto'`가 있는 라우트는 동적으로 서버 렌더링된다.
+
+### entries
+
+SvelteKit은 *entry point*에서 시작해서 크롤링하면서 자동으로 prerender할 페이지를 찾는다. 기본적으로 동적이지않은 모든 라우트는 entry point로 간주된다.
+
+```
+/             # non-dynamic
+/blog         # non-dynamic
+/blog/[slug]  # dynamic, because of `[slug]`
+```
+
+SvelteKit은 `/`와 `/blog`를 prerender하고, 과정 중 prerender할 새로운 페이를 주는 `<a href="/blog/hello-world">`같은 링크를 찾는다.
+대부분의 시간동안 충분하다. 일부 경우, `/blog/hello`같은 페이지로의 링크는 존재하지 않을 수 있으며 이러한 경우 SvelteKit에 그 존재에 대해 알려야 한다. `config.kit.prerender.entries`를 사용하거나 동적 라우트에 속한 +page.js나 +page.server.js나 +server.js의 `entries` 함수를 내보내서 완료될 수 있다.
+
+```
+/** @type {import('./$types').EntryGenerator} */
+export function entries() {
+  return [
+    { slug: 'hello-world' },
+    { slug: 'another-blog-post' }
+  ];
+}
+ 
+export const prerender = true;
+```
+
+`entries`는 CMS나 DB의 post의 목록을 찾도록 해서 `async` 함수가 될 수 있다.
+
+### ssr
+
+일반적으로 SvelteKit은 처음에 서버의 페이지를 렌더링하고 _hydrate_ 된 HTML을 클라이언트에 보낸다. `ssr`을 `false`로 설정했다면 빈 'shell' 페이지가 대신 렌더링된다. 페이지가 서버에서 렌더링될 수 없다면 유용하지만, 대부분의 경우 추천하지 않는다.
+
+```
+export const ssr= false;
+```
+
+root `+layout.js`에 `export const ssr = false`를 추가했다면 전체 앱은 클라이언트에서 렌더링될거다.
+
+### csr
+
+원래 SvelteKit은 server-rendering된 페이지를 상호적인 클라이언트 측 렌더링 페이지로 *hydrate*한다. 일부 페이지가 전부 JS가 필요 없다. 이 경우 CSR을 비활성화 한다.
+
+```
+export const csr = false;
+```
+
+### trailingSlash
+
+기본적으로 SvelteKit은 URL에서 뒤에 오는 슬래시를 제거한다. `'never'`,`'always'`나 `'ignore'` 중 하나로 trailingSlash`의 동작을 바꿀 수 있다.
+다른 페이지 옵션과 마찬가지로 `+layout.js`나 `+layout.server.js`의 값을 내보낼 수 있고, 그 값을 모든 하위 페이지에 적용할 수 있다. `+server.js`의 설정을 내보낼 수 있다.
+
+```
+export const trailingSlash = 'always';
+```
+
+이 옵션은 prerendering에 영향을 미친다. `trailingSlash`가 `always`라면, `/about`같은 라우트는 `about/index.html`에서 발생한다. 그렇지 않으면 정적 웹서버 규칙을 미러링하는 about.html을 생성한다.
+
+### config
+
+`adapter`의 개념으로 SvelteKit는 다양한 플랫폼에서 실행할 수 있다. 이들 각각은 배포를 추가로 조정하기 위한 특정 구성을 가질 수 있다.
+`config`는 최상위 레벨에서 key-value 쌍을 가진 객체다. 그 외에, 구체적인 형상은 사용하는 adapter에 따라 다르다. 모든 adapter은 type 안전을 위해 가져올 config 인터페이스를 제공해야한다.
+
+```
+/** @type {import('some-adapter').Config} */
+export const config = {
+  runtime: 'edge'
+};
+```
+
+`config` 객체는 상위 레벨에서 병합되었다. 이는 상위 `+layout.js`의 일부 값을 덮어씌우기만 원할 때 `+page.js`의 모든 값을 반복할 필요가 없다는 것을 의미한다.
+
+```
+//+layout.js
+export const config = {
+  runtime: 'edge',
+  regions: 'all',
+  foo: {
+    bar: true
+  }
+}
+
+//+page.js
+export const config = {
+  regions: ['us1', 'us2'],
+  foo: {
+    baz: true
+  }
+}
+
+//config value
+{ runtime: 'edge', regions: ['us1', 'us2'], foo: { baz: true } }
+```
 
 ## Fetching Data
