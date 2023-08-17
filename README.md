@@ -1006,6 +1006,152 @@ fom을 향상시키는 가장 쉬운 방법은 `use:enhance` action을 추가하
 -   `goto`를 리다이렉트 응답에 호출한다.
 -   에러 발생 시가장 가까운 `+error` 경계를 렌더링한다.
 -   포커스를 적절한 요소로 재설정한다.
--
+
+동작을 사용자 지정하기 위해 form이 제출되기 전에 실행되는 `SubmitFunction`을 제공하고 `ActionResult`와 실행되는 콜백을 반환해야 한다.
+콜백이 반환되면 위에 언급한 기본 동작은 트리거되지 않는다. 반환하려면 `update`를 호출해야 한다.
+
+```
+<form
+  method="POST"
+  use:enhance={({ formElement, formData, action, cancel, submitter }) => {
+    // `formElement` is this `<form>` element
+    // `formData` is its `FormData` object that's about to be submitted
+    // `action` is the URL to which the form is posted
+    // calling `cancel()` will prevent the submission
+    // `submitter` is the `HTMLElement` that caused the form to be submitted
+
+    return async ({ result, update }) => {
+      // `result` is an `ActionResult` object
+      // `update` is a function which triggers the default logic that would be triggered if this callback wasn't set
+    };
+  }}
+>
+```
+
+**applyAction**
+
+> 고유한 callback을 제공한다면 가장 가까운 `+error` 경계 호출 같은 기본 `use:enhance` 동작의 일부분을 재생산해야한다. 대부분 callback으로 전달된 `update` 호출은 충분하다. 더 많은 사용자 지정이 필요하다면 `applyAction`을 사용하면 된다.
+
+```
+<script>
+	import { enhance, applyAction } from '$app/forms';
+
+  /** @type {import('./$types').ActionData} */
+  export let form;
+</script>
+
+<form
+  method="POST"
+  use:enhance={({ formElement, formData, action, cancel }) => {
+
+    return async ({ result }) => {
+      // `result` is an `ActionResult` object
+			if (result.type === 'error') {
+				await applyAction(result);
+			}
+    };
+  }}
+>
+
+```
+
+`applyAction(result)`의 동작은 `result.type`에 따른다.
+
+-   `success`, `failure` : `$page.status`를 `result.status`로 설정하고 `form`과 `$page.form`을 `result.data`로 업데이트한다(`enhance`의 `update`와는 달리, 어떤 form을 제출했든 상관없다.).
+-   `redirect` : `goto(result.location)`을 호출한다.
+-   `error` : `result.error`로 가장 가까운 `+error` 경계를 렌더링한다.
+    모든 경우에서 포커스는 재설정된다.
+
+**Custom event listener**
+
+> `use:enhance`없이 `<form>`에서 일반 *custom event listener*로 점진적 향상을 개발할 수 있다.
+
+```
+<script>
+  import { invalidateAll, goto } from '$app/navigation';
+  import { applyAction, deserialize } from '$app/forms';
+
+  /** @type {import('./$types').ActionData} */
+  export let form;
+
+  /** @type {any} */
+  let error;
+
+  async function handleSubmit(event) {
+    const data = new FormData(this);
+
+    const response = await fetch(this.action, {
+      method: 'POST',
+      body: data
+    });
+
+    /** @type {import('@sveltejs/kit').ActionResult} */
+    const result = deserialize(await response.text());
+
+    if (result.type === 'success') {
+      // rerun all `load` functions, following the successful update
+      await invalidateAll();
+    }
+
+    applyAction(result);
+  }
+</script>
+
+<form method="POST" on:submit|preventDefault={handleSubmit}>
+  <!-- content -->
+</form>
+```
+
+`$app/forms`에서 상응하는 방법을 사용하여 응답을 더 처리하기 전에 `deserialize`해야 한다. load 함수 같은 form 동작이 Date나 BigInt 객체를 반환을 지원하기 때문에 `JSON.parse()`는 충분하지 않다.
+`+server.js`와 `+page.server.js`를 가지고 있다면, `fetch` 응답은 기본적으로 라우팅된다. `page.server.js`의 action에 `POST`하려면 커스텀 `x-sveltekit-action` 헤더를 사용해야한다.
+
+```
+const response = await fetch(this.action, {
+  method: 'POST',
+  body: data,
+	headers: {
+		'x-sveltekit-action': 'true'
+	}
+});
+```
+
+## Alternatives
+
+> form action은 점진적으로 향상될 수 있기에 데이터를 서버로 보내는데 선호되는 방식이지만, _+server.js_ 파일을 사용해서 예를 들어 JSON API를 보여줄 수 있다.
+
+```
+//send-message/+page.svelte
+<script>
+  function rerun() {
+    fetch('/api/ci', {
+      method: 'POST'
+    });
+  }
+</script>
+
+<button on:click={rerun}>Rerun CI</button>
+
+// api/ci/+server.js
+/** @type {import('./$types').RequestHandler} */
+export function POST() {
+  // do something
+}
+```
+
+## GET vs POST
+
+form 동작을 호출하기 위해 `method="POST"`를 사용해야 한다.
+일부 form은 데이터를 서버로 `POST`할 필요 없다. 이 경우, `method="GET"`를 사용할 수 있고 SvelteKit는 페이지 전체 탐색 대신 클라이언트 측 라우터를 사용해 `<a>` 요소처럼 다룬다.
+
+```
+<form action="/search">
+  <label>
+    Search
+    <input name="q">
+  </label>
+</form>
+```
+
+이 form의 제출은 `/search?q=...`로 이동하여 load function을 호출하지만 action을 호출하진 않는다. `<a/>` 처럼, 라우터의 동작을 제어하기 위해 `<form>`의 data-svelte-reload, data-sveltekit-replacestate, data-sveltekit-keepfocus, data-sveltekit-noscroll 속성을 설정할 수 있다.
 
 ## Fetching Data
