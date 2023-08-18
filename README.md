@@ -1314,4 +1314,153 @@ export const config = {
 { runtime: 'edge', regions: ['us1', 'us2'], foo: { baz: true } }
 ```
 
+## State management
+
+### Avoid shared state on the server
+
+브라우저는 *stateful(상태유지)*다. state는 메모리에 애플리케이션과 유저의 상호작용으로 저장되어있다. 반면 서버는 *stateless(무상태)*다. 응답의 컨텐츠가 요청의 컨텐츠에 전부 결정된다. 즉 서버가 클라이언트의 상태를 보존하지 않는다.
+개념적으로 그렇다. 현실에서 서버는 종종 다수의 유저에 의해 오래 살아있고 공유된다. 따라서 공유 변수에 데이터를 저장하지 않는 것이 중요하다.
+
+```
+let user;
+ 
+/** @type {import('./$types').PageServerLoad} */
+export function load() {
+  return { user };
+}
+ 
+/** @type {import('./$types').Actions} */
+export const actions = {
+  default: async ({ request }) => {
+    const data = await request.formData();
+ 
+    // NEVER DO THIS!
+    user = {
+      name: data.get('name'),
+      embarrassingSecret: data.get('secret')
+    };
+  }
+}
+```
+
+`user` 변수는 서버에 연결된 모두에게 공유된다. 만약 Alice가 창피한 비밀을 등록하고 Bob가 뒤에 페이지를 방문하면 Bob은 Alice의 비밀을 알 것이다. 추가로, Alice가 다음에 사이트를 재방문할 때, 서버는 재시작해 데이터를 잃을 것이다.
+대신, 쿠키를 사용하는 유저를 *authenticate*하고 DB에 데이터를 유지해야 한다.
+
+### No side-effects in load
+
+같은 이유로, load 함수는 *pure*해야 한다. 예를 들어 컴포넌트에 저장 값을 사용할 수 있도록 load 함수 내부의 저장 위치에 기록하고 싶을 수 있다.
+
+```
+import { user } from '$lib/user';
+ 
+/** @type {import('./$types').PageLoad} */
+export async function load({ fetch }) {
+  const response = await fetch('/api/user');
+ 
+  // NEVER DO THIS!
+  user.set(await response.json());
+}
+```
+
+이전 예시처럼, 모든 사용자가 공유된 공간에 한 유저의 정보를 넣는 것이다. 대신 데이터를 반환하고 데이터가 필요한 컴포넌트에 넘기거나 `$page.data`를 사용해야 한다.
+
+```
+export async function load({ fetch }) {
+  const response = await fetch('/api/user');
+
+	return {
+		user: await response.json()
+	};
+}
+```
+
+SSR을 사용하지 않는다면, 한 유저의 데이터가 다른 사람들에게 보여질 위험이 없다. 하지만 load 함수에서 부작용을 피해야 한다.
+
+### Using stores with context
+
+고유한 저장공간을 사용할 수 없는 경우 `$page.data` 및 기타 `app store`를 어떻게 사용할 수 있는지 궁금할 수 있다. 해답은 서버의 `app store`가 Svelte의 `context API`를 사용하는 것이다.
+
+```
+// +layout.svelte
+<script>
+  import { setContext } from 'svelte';
+  import { writable } from 'svelte/store';
+
+  /** @type {import('./$types').LayoutData} */
+  export let data;
+
+  // Create a store and update it when necessary...
+  const user = writable();
+  $: user.set(data.user);
+
+  // ...and add it to the context for child components to access
+  setContext('user', user);
+</script>
+
+// +page.svelte
+<script>
+  import { getContext } from 'svelte';
+
+  // Retrieve user store from context
+  const user = getContext('user');
+</script>
+
+<p>Welcome {$user.name}</p>
+```
+
+SSR을 통해 페이지를 렌더링할 때 더 깊은 수준의 페이지 또는 구성 요소에서 컨텍스트 기반 저장 값을 업데이트해도 상위 구성 요소의 값에는 영향을 미치지 않는다. 상위 구성 요소는 저장 값이 업데이트될 때까지 이미 렌더링되었다. `hydration` 중 상태 업데이트 중에 값이 '점멸'되는 것을 방지하려면 일반적으로 상태를 위로 전달하는 것이 좋습니다.
+SSR을 사용하지 않는다면, 공유 모듈의 state를 안전하게 유지할 수 있다.
+
+### Component state is preserved
+
+애플리케이션을 탐색할 때, SvelteKit는 존재하는 레이아웃과 페이지 컴포넌트를 재사용한다.
+
+```
+// +page.svelte
+<script>
+  /** @type {import('./$types').PageData} */
+  export let data;
+
+  // THIS CODE IS BUGGY!
+  const wordCount = data.content.split(' ').length;
+  const estimatedReadingTime = wordCount / 250;
+</script>
+
+<header>
+  <h1>{data.title}</h1>
+  <p>Reading time: {Math.round(estimatedReadingTime)} minutes</p>
+</header>
+
+<div>{@html data.content}</div>
+```
+
+/blog/A에서 /blog/B의 이동은 컴포넌트를 제거하고 다시 만들지 않느낟. 데이터 속성은 바뀌지만 코드는 재실행되지 않는다. `estimatedReadingTime`은 다시 계산되지 않는다.
+대신, 값을 반응성있게 만들어야한다.
+
+```
+<script>
+  /** @type {import('./$types').PageData} */
+  export let data;
+
+	$: wordCount = data.content.split(' ').length;
+	$: estimatedReadingTime = wordCount / 250;
+</script>
+```
+
+이처럼 컴포넌트를 재사용하는 것은 사이드 바 스크롤 state 같은 것들이 유지된다는 것을 의미하고, 변경된 값들 사이에서 애니메이션을 쉽게 만들 수 있다. 하지만 탐색 중 컴포넌트를 완전히 제거하고 다시 마운팅할 필요가 있다면 이 패턴을 사용하면 된다.
+
+```
+{#key $page.url.pathname}
+  <BlogPost title={data.title} content={data.title} />
+{/key}
+```
+
+### Storing state in the URL
+
+테이블의 필터 또는 정렬 규칙과 같이 다시 로드하거나 SSR에 영향을 주는 state가 있는 경우 URL 검색 매개 변수를 배치하는 것이 좋다. 이러한 매개 변수를 `<a href="...">` 또는 `<form action="..."...>` 속성에 넣거나 `goto(?key=value')`를 통해 프로그래밍 방식으로 설정할 수 있다. 이러한 매개 변수는 `URL` 매개 변수를 통해 로드 함수 내부에 액세스하고 `$page.url.searchParams`를 통해 컴포넌트 내부에 액세스할 수 있다.
+
+### Storing ephemeral state in snapshots
+
+일부 UI state는 사용자가 다른 페이지로 이동하거나 페이지를 새로 고치면 state가 손실되어도 상관이 없다. 경우에 따라 사용자가 다른 페이지로 이동했다가 다시 돌아오면 데이터가 지속되기를 원하지만, URL이나 데이터베이스에 state를 저장하는 것은 과하다. 이를 위해 SvelteKit는 스냅샷을 제공하므로 컴포넌트 state를 기록 항목과 연결할 수 있다.
+
 ## Fetching Data
