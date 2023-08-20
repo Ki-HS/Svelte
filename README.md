@@ -1698,4 +1698,155 @@ process.on('SIGINT', shutdownGracefully);
 process.on('SIGTERM', shutdownGracefully);
 ```
 
+## Static site generation
+
+SvelteKit를 `Static Site Generator`로서 사용하기 위해 `adapter-static`를 사용해야 한다.
+전체 사이트가 정적 파일 모음으로 prerender 된다. 일부페이지만 prerender하고 다른 페이지는 다른 페이지는 동적으로 서버 렌더링하려면 prerender 옵션과 함께 다른 어댑터를 사용해야 한다.
+
+### Usage
+
+`npm i -D @sveltejs/adapter-static`로 설치하고 `svelte.config.js`에 어댑터를 추가해야 한다.
+
+```
+import adapter from '@sveltejs/adapter-static';
+ 
+export default {
+  kit: {
+    adapter: adapter({
+      // default options are shown. On some platforms
+      // these options are set automatically — see below
+      pages: 'build',
+      assets: 'build',
+      fallback: undefined,
+      precompress: false,
+      strict: true
+    })
+  }
+};
+```
+
+그리고 prerender 옵션을 root 레이아웃에 추가해야 한다.
+
+```
+// This can be false if you're using a fallback (i.e. SPA mode)
+export const prerender = true;
+```
+
+> SvelteKit의 `trailingSlash` 옵션이 환경에 적절히 설치됨을 확실히 해야 한다. 호스트가 `/a`에 대한 요청을 수신할 때 `/a.html`을 렌더링하지 않으면 루트 레이아웃에 `trailingSlash: 'always'`를 설정하여 대신 `/a/index.html`을 생성해야 한다.
+
+### Zero-config support
+
+일부 플랫폼은 zero-config support를 가진다. -> Vercel
+이런 플랫폼에서는, `adapter-static`이 최적의 구성을 제공할 수 있도록 어댑터 옵션을 생략해야 한다.
+
+```
+export default {
+  kit: {
+		adapter: adapter({...})
+		adapter: adapter()
+  }
+};
+```
+
+### Options
+
+**pages**
+prerendering 된 페이지가 쓰일 디렉터리. 기본적으로 `build`
+
+**assets**
+static asset이 쓰일 디렉터리. 일반적으로 `page`와 동일해야 하며, `page` 값이 무엇이든 기본적으로 설정되지만 드물게는 별도의 위치에 페이지와 asset을 출력해야 할 수도 있다.
+
+**fallback**
+`SPA mode`에 대한 fallback 페이지를 특정한다.
+
+**precompress**
+만약 `true`라면, 파일을 brotil과 gzip으로 precompress한다. `.br`과 `.gz` 파일을 생성한다.
+
+**strict**
+기본적으로 `adapter-static` 체크는 앱의 모든 페이지와 엔드포인트가 prerendering 되어 있는지 또는 사용자에게 fallback 옵션이 설정되어 있는지 확인한다. 이 검사는 일부가 최종 출력에 포함되지 않기 때문에 액세스할 수 없는 앱을 실수로 게시하는 것을 방지하기 위해 존재한다. 이 문제가 괜찮다는 것을 알고 있는 경우 `strict`을 `false`로 설정하여 이 검사를 해제할 수 있다.
+
+### Github Pages
+
+깃허브 페이지에 대해서 빌딩할 때, 사이트가 root보다 특정 레파지토리로 부터 서비스 될 때 <U>paths.base</U>을 레파지토리 이름과 일치하도록 업데이트 해야 한다.
+`static` 폴더에 빈 `.nodekyll`을 넣어 깃허브에서 제공한 Jekyll이 사이트를 관리하는 것을 막아야 한다.
+깃허브 페이지에 대한 구성은 다음과 같다.
+
+```
+import adapter from '@sveltejs/adapter-static';
+ 
+const dev = process.argv.includes('dev');
+ 
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+  kit: {
+    adapter: adapter(),
+    paths: {
+      base: dev ? '' : process.env.BASE_PATH,
+    }
+  }
+};
+```
+
+변화가 있을 때 자동으로 사이트를 깃허브 페이지에 배포하기 위해 깃허브 action을 사용할 수 있다.
+
+```
+name: Deploy to GitHub Pages
+
+on:
+  push:
+  branches: 'main'
+
+jobs:
+  build_site:
+  runs-on: ubuntu-latest
+  steps:
+    - name: Checkout
+    uses: actions/checkout@v3
+
+    # If you're using pnpm, add this step then change the commands and cache key below to use `pnpm`
+    # - name: Install pnpm
+    #   uses: pnpm/action-setup@v2
+    #   with:
+    #     version: 8
+
+    - name: Install Node.js
+    uses: actions/setup-node@v3
+    with:
+      node-version: 18
+      cache: npm
+
+    - name: Install dependencies
+    run: npm install
+
+    - name: build
+    env:
+      BASE_PATH: '/your-repo-name'
+    run: |
+      npm run build
+      touch build/.nojekyll
+
+    - name: Upload Artifacts
+    uses: actions/upload-pages-artifact@v1
+    with:
+      # this should match the `pages` option in your adapter-static options
+      path: 'build/'
+
+  deploy:
+  needs: build_site
+  runs-on: ubuntu-latest
+
+  permissions:
+    pages: write
+    id-token: write
+
+  environment:
+    name: github-pages
+    url: ${{ steps.deployment.outputs.page_url }}
+
+  steps:
+    - name: Deploy
+    id: deployment
+    uses: actions/deploy-pages@v1
+```
+
 ## Fetching Data
