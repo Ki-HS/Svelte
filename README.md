@@ -1563,7 +1563,7 @@ node build
 node -r dotenv/config build
 ```
 
-### PORT, HOST and SOCKET_PATH
+**PORT, HOST and SOCKET_PATH**
 
 기본적으로 서버는 포트 3000을 사용해서 `0.0.0.0`에 연결을 받아들인다. `PORT`와 `HOST` 환경 변수로 변경할 수 있다.
 
@@ -1577,7 +1577,7 @@ HOST=127.0.0.1 PORT=4000 node build
 SOCKET_PATH=/tmp/socket node build
 ```
 
-### ORIGIN, PROTOCOL_HEADER and HOST_HEADER
+**ORIGIN, PROTOCOL_HEADER and HOST_HEADER**
 
 HTTP는 SvelteKit에게 현재 요청된 URL을 알 수 있는 신뢰할 수 있는 경로를 주지 않는다. SvelteKit에게 어디서 앱이 서비스되는지 알려주는 가장 간단한 방법은 `ORIGIN` 환경변수를 설정하는 것이다.
 
@@ -1597,6 +1597,105 @@ PROTOCOL_HEADER=x-forwarded-proto HOST_HEADER=x-forwarded-host node build
 > `x-forwarded-proto`와 `x-forwarded-host`는 리버스 프록시를 사용하는 경우 원래 프로토콜과 호스트를 포워딩하는 사실상의 표준 헤더다. 신뢰할 수 있는 리버스 프록시 뒤에 서버가 있는 경우에만 이러한 변수를 설정해야 한다. 그렇지 않으면 클라이언트가 이러한 헤더를 스푸핑할 수 있다.
 > `adapter-node`가 배포 URL를 정확하게 결정할 수 없다면 form action을 사용했을 때 오류를 겪을 것이다.
 
-### ADDRESS_HEADER and XFF_DEPTH
+**ADDRESS_HEADER and XFF_DEPTH**
+
+hooks와 endpoints를 지나는 `RequestEvent` 객체는 클라이언트의 IP 주소를 반환하는 `event.getClientAddress()` 함수를 포함한다. 기본적으로 이것은 `remoteAddress`를 연결한다. 서버는 한 개 이상의 프록시 뒤에 있다. 이 값에는 클라이언트의 IP 주소가 아닌 가장 안쪽의 프록시의 IP 주소가 포함되므로 주소를 읽을 `ADDRESS_HEADER`를 지정해야 한다.
+
+```
+ADDRESS_HEADER=True-Client-IP node build
+```
+
+일부 가이드에서는 가장 왼쪽에 있는 주소를 읽으라고 하지만 이로 인해 `spoofing`에 취약하다.
+
+```
+<spoofed address>, <client address>, <proxy 1 address>, <proxy 2 address>
+```
+
+**BODY_SIZE_LIMIT**
+
+스트리밍 동안 포함하여 바이트 단위로 수락할 최대 request body 크기다. 기본적으로 512kb. 0의 값으로 이 옵션을 비활성화하고 고급 기능이 필요한 경우 커스텀 체크인 `handle`을 구현할 수 있다.
+
+### Options
+
+어댑터는 다양한 옵션으로 구성될 수 있다.
+
+```
+import adapter from '@sveltejs/adapter-node';
+ 
+export default {
+  kit: {
+    adapter: adapter({
+      // default options are shown
+      out: 'build',
+      precompress: false,
+      envPrefix: '',
+      polyfill: true
+    })
+  }
+};
+```
+
+**out**
+
+서버를 빌드할 디렉터리다. 기본적으로 `build`
+
+**precompress**
+
+assets 및 prerendering된 페이지에 대해 gizp과 brotli를 사용하여 precompressing 가능하다. 기본적으로 `false`
+
+**envPrefix**
+
+배포를 구성하는데 사용되는 환경 변수의 이름을 변경해야 하는 경우 접두사를 지정할 수 있다.
+
+```
+envPrefix: 'MY_CUSTOM_';
+
+MY_CUSTOM_HOST=127.0.0.1 \
+MY_CUSTOM_PORT=4000 \
+MY_CUSTOM_ORIGIN=https://my.site \
+node build
+```
+
+**polyfill**
+빌드에서 누락된 모듈에 대한 <U>polyfill</U>을 로드할지 여부를 제어한다. 기본적으로 `true`고 Node 18.11 이상을 사용할 때 비활성화해야 한다.
+
+### Custom server
+
+어댑터는 build 디렉터리에 index.js와 handler.js 두 파일을 만든다. index.js를 실행하는 것은 구성된 포트의 서버를 시작한다.
+대신, `Express`, `Connect`나 `Polka`와 함께 사용하기에 적합한 핸들러를 내보내고 자체 서버를 설정하는 `handler.js` 파일을 import할 수 있다.
+
+```
+import { handler } from './build/handler.js';
+import express from 'express';
+ 
+const app = express();
+ 
+// add a route that lives separately from the SvelteKit app
+app.get('/healthcheck', (req, res) => {
+  res.end('ok');
+});
+ 
+// let SvelteKit handle everything else, including serving prerendered pages and static assets
+app.use(handler);
+ 
+app.listen(3000, () => {
+  console.log('listening on port 3000');
+});
+```
+
+### Troubleshooting
+
+**Is there a hook for cleaning up before the server exits?**
+cleanup hook는 현제 실행 환경에 크게 의존하기 때문에 SvelteKit에 내장된 기능은 없다. 노드에 대해서, 내장된 프로세스를 사용하여 서버가 종료되기 전에 실행되는 콜백을 구현할 수 있다.
+
+```
+function shutdownGracefully() {
+  // anything you need to clean up manually goes in here
+  db.shutdown();
+}
+
+process.on('SIGINT', shutdownGracefully);
+process.on('SIGTERM', shutdownGracefully);
+```
 
 ## Fetching Data
