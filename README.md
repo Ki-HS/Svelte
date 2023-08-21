@@ -1849,4 +1849,494 @@ jobs:
     uses: actions/deploy-pages@v1
 ```
 
-## Fetching Data
+## Single-page apps
+
+어느 어댑터를 사용해 어느 SvelteKit 앱을 루트 레이아웃에서 SSR을 비활성화해서 완전히 클라이언트 렌더링된 `Single-page app(SAP)`으로 바꿀 수 있다.
+
+```
+// src/routes/+layout.js
+export const ssr = false;
+```
+
+> 대부분의 경우 추천되지는 않는다. : 이는 SEO에 해를 끼치고, 인지된 성능을 저하시키는 경향이 있으며, JavaScript가 실패하거나 비활성화된 경우 사용자가 앱에 액세스할 수 없게 한다.
+> `+page.server.js`, `+layout.server.js` 와 같은 서버 측 로직이 없는 경우, *fallback page*을 추가해서 SPA를 추가하기 위해 `adapter-static`을 사용할 수 있다.
+
+### Usage
+
+`npm i -D @sveltejs/adapter-static`으로 설치하고 다음 옵션으로 `svelte.config.js`에 어댑터를 추가해야 한다.
+
+```
+import adapter from '@sveltejs/adapter-static';
+ 
+export default {
+  kit: {
+    adapter: adapter({
+      fallback: '200.html' // may differ from host to host
+    })
+  }
+};
+```
+
+`fallback` 페이지는 앱을 로드하고 올바른 라우트로 이동하는 페이지 템플릿의 SvelteKit에 의해 만들어진 HTML 페이지다. 예를 들어 정적 웹 호스트인 <U>Serge</U>는 정적 assets이나 prerendering된 페이지에 부합하지 않은 어느 요청이든 다룰 수 있는 `200.html` 파일을 추가하게 한다.
+일부 호스트에 대해서 `index.html`이나 완전히 다른 것이 될 수 있다.
+`
+
+### Apache
+
+<U>Apache</U>에서 SPA를 실행하기 위해서 요청을 라우팅할 `static/.htaccess` 파일을 fallback 페이지에 추가해야 한다.
+
+```
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^200\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /200.html [L]
+</IfModule>
+```
+
+### Prerendering individual pages
+
+prerendering 될 특정 페이지를 원한다면,앱의 해당 부분에 대해서만 `prerender`와 함께 ssr을 다시 활성화 할 수 있다.
+
+```
+export const prerender = true;
+export const ssr = true;
+```
+
+### Cloudflare Pages
+
+<U>Cloudflare Pages</U>로 배포하기 위해서 <U>adapter-cloudflare</U>을 사용해야 한다.
+이 어댑터는 기본적으로 <U>adapter-auto</U>를 사용할 때 설치된다. Cloudflare 페이지를 계속 사용할 경우, <U>adapter-auto</U>를 이 어댑터를 직접 사용하는 것으로 바꿀 수 있다. 그래서 타입 선엉ㄴ은 자동으로 적용되고 Cloudflare-specific 옵션을 설정할 수 있다.
+
+### Comparisons
+
+-   `adapter-cloudflare` : 모든 SvelteKit 기능을 지원한다;Cloudflare 페이지를 위한 빌드
+-   `adapter-cloudflare-workers` : 모든 SvelteKit 기능을 지원한다;Cloudflare Workers를 위한 빌드
+-   `adapter-static` : 오직 클라이언트 측 static assets만 제공한다.; Cloudflare 페이지와 호환된다.
+
+### Usage
+
+`npm i -D @sveltejs/adapter-cloudflare`로 설치하고 어댑터를 `svelte.config.js`에 설치해라.
+
+```
+import adapter from '@sveltejs/adapter-cloudflare';
+ 
+export default {
+  kit: {
+    adapter: adapter({
+      // See below for an explanation of these options
+      routes: {
+        include: ['/*'],
+        exclude: ['<all>']
+      }
+    })
+  }
+};
+```
+
+### Options
+
+`routes` 옵션은 `adapter-cloudflare`에 의해 생성된 <U>\_routes.json</U> 파일을 커스텀할 수 있게 한다.
+
+-   `include`는 함수를 호출하고 기본 값은 `['/*']`인 라우트를 정의한다.
+-   `exclude`는 함수를 호출하지 않는 라우트를 정의한다. : 이는 앱의 static asset을 제공하는 가장 빠르고 쉬운 방법이다. 이 배열은 다음 특별한 값을 포함할 수 있다.
+    -   `<build>`는 앱의 빌트 아티팩트를 포함한다.
+    -   `<files>`는 `static` 디렉터리의 컨텐츠를 포함한다.
+    -   `<prerendered>`는 prerendering 된 페이지의 목록을 포함한다.
+    -   `<all>` (기본) 위의 모든 것
+
+병합된 `include`와 `exclude` 100개 까지 가질 수 있다. 일반적으로 `routes` 옵션을 포함할 수 있지만 `<prerendered>` 경로가 한계를 초과한다면 자동으로 생성된 `['/articles/foo', '/article/bar', ...]`을 대신해 `'/article/*'`을 포함하는 `exclude` 목록을 수동으로 만드는 것이 도움이 될 수 있다.
+
+### Deployment
+
+시작하려면 Cloudflare Page의 <U>Get Started Guide</U>를 따라야 한다.
+프로젝트 설정을 구성할 때, 다음 설정을 사용해야 한다.
+
+-   **Framework preset** - SvelteKit
+-   **Build command** - `npm run build` or `vite build`
+-   **Build output directory** - `.svelte-kit/cloudflare`
+
+### Bindings
+
+<a href="https://developers.cloudflare.com/workers/runtime-apis/fetch-event#parameters">env</a> 객체는 KV/DO namespaces 등으로 구성도니 프로젝트의 <a href="https://developers.cloudflare.com/workers/configuration/environment-variables/">bindings</a>를 포함한다. `platform` 속성을 통해 `context`, `caches`와 함께 SvelteKit으로 통과하므로 hooks와 endpoints에서 액세스할 수 있다.
+
+> SvelteKit의 내장된 `$env` 모듈은 환경 변수에 대해 선호되어야 한다.
+
+이러한 타입을 앱에 사용가능케 하려면 `src/app.d.ts`에 참조해야 한다.
+
+```
+declare global {
+  namespace App {
+    interface Platform {
+			env?: {
+				YOUR_KV_NAMESPACE: KVNamespace;
+				YOUR_DURABLE_OBJECT_NAMESPACE: DurableObjectNamespace;
+			};
+    }
+  }
+}
+
+export {};
+```
+
+**Testing Locally**
+`platfom.env`는 개발자 모드에서가 아닌 오직 최종 빌드에서만 사용할 수 있다. 빌드를 테스트하기 위해 <U>wrangler</U> 버전 3를 사용할 수 있다. 사이트를 한번 빌드하면 `wrangler pages dev .svelte-kit/cloudflare`을 실행해라. `wrangler.toml`에 <U>bindings</U>을 가지고 있는지 확인해야 한다.
+
+### Notes
+
+프로젝트 루트에 있는 `/functions` 디렉터리에 포함된 함수는 <U>single_worker.js file</U>로 컴파일된 배포에 포함되지 않는다. 함수는 SvelteKit 앱에서 <U>server endpoints</U>로 구현되어야 한다.
+Cloudflare 페이지 별 `_header`, `_redirect` 파일은 `/static` 폴더에 넣어서 정적 자산 응답을 위해 사용될 수 있다.
+하지만, 커스텀 헤더릴 반환하거나 <U>server endpoints</U> 또는 <U>handle</U> 후크에서 응답을 리디렉션해야 하는 SvelteKit에 의해 동적으로 렌더링된 응답에 영향일 미치지 않는다.
+
+### Troubleshooting
+
+**Further reading**
+
+<a href="https://developers.cloudflare.com/pages/framework-guides/deploy-a-svelte-site"> SvleteKit 사이트 배포를 위한 Cloudflare의 공식 문서</a>를 참조할 수 있다.
+
+**Accessing the file system**
+
+Serverless/Edge 환경에서 `fs.readFileSync`같은 방법을 통해 파일 시스템에 액세스할 수 없다. 그런 방법으로 파일에 액세스해야 한다면, <U>prerendering</U>을 통한 앱을 빌드하는 동안 해야한다. 예시의 블로그를 가지고 있고 CMS를 통해 컨텐츠를 관리하고 싶지 않다면 컨텐츠를 prerender 하고 새로운 컨텐츠를 추가할때 마다 블로그를 재배포해야한다.
+
+## Cloudflare Workers
+
+<a href="https://workers.cloudflare.com/">Cloudflare Workers</a>에 배포하기 위해 <a href = "https://github.com/sveltejs/kit/tree/master/packages/adapter-cloudflare-workers">adapter-cloudflare-workers</a>를 사용해야 한다.
+
+### Usage
+
+`npm i -D @sveltejs/adapter-cloudflare-workers`로 설치하고 `svelte.config.js`에 어댑터를 설치해야 한다.
+
+```
+import adapter from '@sveltejs/adapter-cloudflare-workers';
+ 
+export default {
+  kit: {
+    adapter: adapter()
+  }
+};
+```
+
+### Basic Configuration
+
+이 어댑터는 프로젝트 루트에 있는 <a href = "https://developers.cloudflare.com/workers/configuration/sites/configuration/">wrangler.toml</a>를 찾을 수 있다. 다음처럼 보여야 한다.
+
+```
+name = "<your-service-name>"
+account_id = "<your-account-id>"
+
+main = "./.cloudflare/worker.js"
+site.bucket = "./.cloudflare/public"
+
+build.command = "npm run build"
+
+compatibility_date = "2021-11-12"
+workers_dev = true
+```
+
+`<your-service-name>`은 어느 것이든 될 수 있다. `<your-account-id>`는 <a href = "https://dash.cloudflare.com/login">Cloudflare dashboard</a>에 로그인하고 URL의 끝에서 가져와서 찾을 수 있다.
+
+> <a href = "https://developers.cloudflare.com/workers/wrangler/install-and-update/">wrangler</a>를 설치하고 로그인해야 한다.
+
+```
+npm i -g wrangler
+wrangler login
+
+//deploy
+wrangler publish
+```
+
+### Custom config
+
+`wrangler.toml`이 아닌 다른 구성 파일을 사용하고자 하는 경우, 그렇게 할 수 있다.
+
+```
+// svelte.config.js
+import adapter from '@sveltejs/adapter-cloudflare-workers';
+ 
+export default {
+  kit: {
+    adapter: adapter({ config: '<your-wrangler-name>.toml' })
+  }
+};
+```
+
+### Bindings
+
+<a href="https://developers.cloudflare.com/workers/runtime-apis/fetch-event#parameters">env</a> 객체는 KV/DO namespaces 등으로 구성도니 프로젝트의 <a href="https://developers.cloudflare.com/workers/configuration/environment-variables/">bindings</a>를 포함한다. `platform` 속성을 통해 `context`, `caches`와 함께 SvelteKit으로 통과하므로 hooks와 endpoints에서 액세스할 수 있다.
+
+```
+export async function POST({ request, platform }) {
+  const x = platform.env.YOUR_DURABLE_OBJECT_NAMESPACE.idFromName('x');
+}
+```
+
+> SvelteKit의 내장된 `$env` 모듈은 환경 변수에 대해 선호되어야 한다.
+
+이러한 타입을 앱에 사용가능케 하려면 `src/app.d.ts`에 참조해야 한다.
+
+```
+declare global {
+  namespace App {
+    interface Platform {
+			env?: {
+				YOUR_KV_NAMESPACE: KVNamespace;
+				YOUR_DURABLE_OBJECT_NAMESPACE: DurableObjectNamespace;
+			};
+    }
+  }
+```
+
+**Testing Locally**
+
+`platform.env`는 개발자 모드에서가 아닌 오직 최종 빌드에서만 사용할 수 있다. 빌드를 테스트하기 위해 <U>wrangler</U>를 사용할 수 있다. 사이트를 한번 빌드하면 `wrangler pages dev`을 실행해라. `wrangler.toml`에 <U>bindings</U>을 가지고 있는지 확인해야 한다. Wrangler version 3이 추천된다.
+
+### Troubleshooting
+
+**Worker size limits**
+
+workers에 배포할 때, SvelteKit에 의해 생성된 서버는 단일 파일로 번들링 된다.
+Wrangler는 압축 후에 <a href="https://developers.cloudflare.com/workers/platform/limits/#worker-size">크기 제한<a>을 넘긴다면 worker를 퍼블리싱하지 못하게 한다. 일반적으로 이 한계에 도달할 가능성은 낮지만 일부 대규모 라이브러리에서는 이 한계가 발생할 수 있다. 그 경우, 클라이언트 측의 그러한 라이브러리를 import함으로써 worker의 크기를 줄일 수 있다.
+
+**Accessing the file system**
+
+Serverless/Edge 환경에서 `fs.readFileSync`같은 방법을 통해 파일 시스템에 액세스할 수 없다. 그런 방법으로 파일에 액세스해야 한다면, <U>prerendering</U>을 통한 앱을 빌드하는 동안 해야한다. 예시의 블로그를 가지고 있고 CMS를 통해 컨텐츠를 관리하고 싶지 않다면 컨텐츠를 prerender 하고 새로운 컨텐츠를 추가할때 마다 블로그를 재배포해야한다.
+
+## Netlify
+
+Netlify에 배포하기 위해 <a href="https://github.com/sveltejs/kit/tree/master/packages/adapter-netlify">adapter-netlify</a>
+이 어댑터는 기본적으로 <a href ="https://kit.svelte.dev/docs/adapter-auto">adapter-auto</a>를 사용할 때 설치되지만, 프로젝트에 추가하는 것은 Netlify 관련된 옵션을 지정하게 한다.
+
+### Usage
+
+`npm i -D @sveltejs/adapter-netlify`로 설치하고 `svelte.config.js`에 어댑터를 설치해야 한다.
+
+```
+import adapter from '@sveltejs/adapter-netlify';
+ 
+export default {
+  kit: {
+    // default options are shown
+    adapter: adapter({
+      // if true, will create a Netlify Edge Function rather
+      // than using standard Node-based functions
+      edge: false,
+ 
+      // if true, will split your app into multiple functions
+      // instead of creating a single one for the entire app.
+      // if `edge` is true, this option cannot be used
+      split: false
+    })
+  }
+};
+```
+
+프로젝트 루트에 있는 <a href ="https://docs.netlify.com/configure-builds/file-based-configuration">netlify.toml</a>을 가지고 있음을 확인해야 한다. `build.publish` 설정에 기반한 정적 자산을 쓰일 곳을 결정한다.
+
+```
+[build]
+  command = "npm run build"
+  publish = "build"
+```
+
+`netlify.toml` 파일이나 `build.publish` 값이 없는 경우, `"build"`의 기본 값이 사용될 것이다. Netlify의 퍼블리시 디렉터리를 다른 무언가로 설정했다면 `netlify.toml`에도 설정하거나 `"build"`의 기본 값으로 사용해야 한다.
+
+**Node version**
+
+새로운 프로젝트는 Node 16을 기본적으로 사용한다. 하지만 이전에 오래된 버전으로 생성한 프로젝트를 업그레이드 한다면 Node 16 이상을 수동으로 지정하는 방법에 대한 자세한 내용은 <a href="https://docs.netlify.com/configure-builds/manage-dependencies/#node-js-and-javascript">Netlify 공식 문서</a>를 참조해라
+
+### Netlify Edge Functions (beta)
+
+SvelteKit은 <a href = "https://docs.netlify.com/edge-functions/overview/">Netlify Edge Functions</a>의 베타 릴리즈를 지원한다. `edge : true` 옵선을 `adapter` 함수로 패스한다면 서버 측 렌더링은 사이트 방문자 가까이 배치된 Deno-based edge 함수에서 일어난다. `false`로 설정되었다면, 사이트는 기본적인 Node-based Netlify 함수에 배포한다.
+
+```
+import adapter from '@sveltejs/adapter-netlify';
+ 
+export default {
+  kit: {
+    adapter: adapter({
+      // will create a Netlify Edge Function using Deno-based
+      // rather than using standard Node-based functions
+      edge: true
+    })
+  }
+};
+```
+
+### Netlify alternatives to SvelteKit functionality
+
+Netlifify 기능에 의존하지 않고 SvelteKit에서 직접 제공하는 기능을 사용하여 앱을 구축할 수 있다. 이러한 기능의 SvelteKit 버전을 사용하면 개발 모드에서 사용할 수 있고, 통합 테스트로 테스트할 수 있으며, Netlify에서 전환하기로 결정한 경우 다른 어댑터와 함께 작업할 수 있다. 그러나 일부 시나리오에서는 이러한 기능의 Netlify 버전을 사용하는 것이 유익할 수 있다. 한 가지 예는 이미 Netlify에서 호스팅된 앱을 SvelteKit로 마이그레이션하는 경우다.
+
+**Redirect rules**
+
+컴파일동안, 리다이텍트 규치근 자동으로 `_redirects` 파일에 추가된다.
+
+-   `netlify.toml`에 있는 `[[redirects]]`은 더 높은 우선 순위를 가진 `_redirects`에 매치되지 않는다. 그래서 항상 <a href="https://docs.netlify.com/routing/redirects/#syntax-for-the-redirects-file">\_redirects file</a>에 규칙을 추가해야 한다.
+-   `_redirects`는 `/\* /foobar/:splat 같은 모든 커스텀 "catch all" 규칙을 가지면 안된다. 반면 Netlify가 <a href="https://docs.netlify.com/routing/redirects/#rule-processing-order">첫 번째로 일치한 규칙만을</a> 처리 중이기 때문에 자동으로 추가된 규칙은 절대 적용되지 않는다.
+
+**Netlify Forms**
+
+1. 묘사된 <a href="https://docs.netlify.com/forms/setup/#html-forms">이것</a>처럼 Netlify HTML form을 생성해라
+2. Netlify의 빌드 못은 배포 시 HTML 파일을 파싱한다. 즉, 폼은 HTML로 prerendering 된다. `export const prerender = true`를 바로 그 페이지에 prerender할 `contact.svelte`에 추가하거나 `kit.prerender.force: true` 옵션을 모든 페이지를 prerendering 하도록 설정할 수 있다.
+3. Netlify form이 `<form netlify ... action ="/success">`같은 <a href="https://docs.netlify.com/forms/setup/#success-messages">커스텀 성공 메시지</a>를 가진다면 일치한 `/routes/success/+page.svelte`가 존재하고 prerender되었는지 확인해야한다.
+
+**Netlify Functions**
+
+이 어댑터로 SvelteKit endpoints는 <a href = "https://docs.netlify.com/functions/overview/">Netlify Functions</a>로 호스팅된다. Netlify function 핸들러는 <a href="https://docs.netlify.com/visitor-access/identity/">Netlify Identity</a> 정보를 포함하는 추가 컨텐스트를 가진다. hooks와 `+page.server.`이나 `+layout.server` endpoints 내부의 `event.platform.context` 필드를 통한 이런 컨텍스트에 액세스할 수 있다. 이런 것들은 어댑터 구성에서 `edge` 속성이 `false`일때 <a href="https://docs.netlify.com/functions/overview/">serless function</a>이거나 `true`일때는 <a href ="https://docs.netlify.com/edge-functions/overview/#app">edge function</a>다.
+
+```
+export const load = async (event) => {
+  const context = event.platform.context;
+  console.log(context); // shows up in your functions log in the Netlify app
+};
+```
+
+추가로, 디렉터리를 생성하고 `netlify.toml` 파일에 구성을 추가해서 고유한 Netlify functions를 추가할 수 있다.
+
+```
+[build]
+  command = "npm run build"
+  publish = "build"
+
+[functions]
+  directory = "functions"
+```
+
+### Troubleshooting
+
+**Accessing the file system**
+
+Serverless/Edge 환경에서 `fs.readFileSync`같은 방법을 통해 파일 시스템에 액세스할 수 없다. 그런 방법으로 파일에 액세스해야 한다면, <U>prerendering</U>을 통한 앱을 빌드하는 동안 해야한다. 예시의 블로그를 가지고 있고 CMS를 통해 컨텐츠를 관리하고 싶지 않다면 컨텐츠를 prerender 하고 새로운 컨텐츠를 추가할때 마다 블로그를 재배포해야한다.
+
+## Vercel
+
+Vercel에 배포하려면 <a href ="https://github.com/sveltejs/kit/tree/master/packages/adapter-vercel" >adapt-vercel</a>을 사용해야 한다.
+이 어댑터는 기본적으로 <a href ="https://kit.svelte.dev/docs/adapter-auto">adapter-auto</a>를 사용할 때 설치되지만 프로젝트에 추가하는 것은 Vercel 특화 옵션을 지정하게 한다.
+
+### Usage
+
+`npm i -D @sveltejs/adapter-vercel`로 설치하고 `svelte.config.js`에 어댑터를 추가해야 한다.
+
+```
+import adapter from '@sveltejs/adapter-vercel';
+ 
+export default {
+  kit: {
+    adapter: adapter({
+      // see the 'Deployment configuration' section below
+    })
+  }
+};
+```
+
+### Deployment configuration
+
+route가 Vercel에 function으로 배치되는 방법을 제어하기 위해, 배포 구성을 위에 있는 옵션 통하거나 `+sever.js`, `+page(.server).js`, `+layout(.server).js`파일로 지정할 수 있다.
+Edge Functions으로 앱의 일부분을 배포할 수 있는 예시 :
+
+```
+//+page.js
+/** @type {import('@sveltejs/adapter-vercel').Config} */
+export const config = {
+  runtime: 'edge'
+};
+```
+
+Serverless 예시:
+
+```
+//+layout.js
+/** @type {import('@sveltejs/adapter-vercel').Config} */
+export const config = {
+  runtime: 'nodejs18.x'
+};
+```
+
+다음 옵션은 모든 functions에 적용된다.
+
+-   `runtime` : `'edge'`, `'nodejs16.x'`이나 `'nodejs18.x'`. 기본적으로 어댑터는 Vercel 대시보드에 사용하기 위해 프로젝트에 구성된 노드 버전에 따라 `'nodejs16.x'`이나 `'nodejs18.x'`를 선택한다.
+-   `region` : <a href ="https://vercel.com/docs/edge-network/regions">edge network regions</a>의 배열이나 `runtime`이 `edge`이면 `'all'`(디폴트). serverless functions에 대한 다중 regions이 Enterprise plans에서만 지원된다.
+-   `split` : `true`라면 라우트가 개별 function으로 배포된다. `split`이 어댑터 레벨에서 `true`로 설정됨녀 모든 라우트는 개별 function으로 배포된다.
+
+추가로, 다음 옵션은 edge function에 적용된다.
+
+-   `external` : 함수를 번들링할 때 esbuild가 외부로 취급해야 하는 종속성 배열. 이는 노드 외부에서 실행되지 않는 선택적 종속성을 제외하는 데만 사용되어야 합니다
+
+다음 옵션은 serverless functions에 적용된다.
+
+-   `memory` : function에 사용가능한 메모리의 총량. 기본적으로 1024 Mb, 128MB로 감소될 수 있거나 프로나 기업 계정에서 64MB에서 최대 3008 MB로 증가될 수 있다.
+-   `maxDuration` : function의 최대 실행 기간. Hobby 계정에서는 기본적으로 10초, 프로에서는 60, 기업에서는 900초
+-   `isr` : 아래 묘사된 Incremental Static Regeneration 구성
+    function이 특정 구역의 데이터에 액세스 해야 한다면, 최적 퍼포먼스르 위해 같은 구역에 배포되는게 추천된다.
+
+### Incremental Static Regeneration
+
+Vercel은 동적으로 렌더링되는 콘텐츠의 유연성과 함께 prerendering된 콘텐츠의 성능 및 비용 이점을 제공하는 <a href = "https://vercel.com/docs/image-optimization/overview">점증적 정적 갱신(ISR)</a>을 지원한다.
+라우트에 ISR을 추가하기 위해 `config`객체에 `isr` 속성을 추가해야 한다.
+
+```
+import { BYPASS_TOKEN } from '$env/static/private';
+ 
+export const config = {
+  isr: {
+    // Expiration time (in seconds) before the cached asset will be re-generated by invoking the Serverless Function.
+    // Setting the value to `false` means it will never expire.
+    expiration: 60,
+ 
+    // Random token that can be provided in the URL to bypass the cached version of the asset, by requesting the asset
+    // with a __prerender_bypass=<token> cookie.
+    //
+    // Making a `GET` or `HEAD` request with `x-prerender-revalidate: <token>` will force the asset to be re-validated.
+    bypassToken: BYPASS_TOKEN,
+ 
+    // List of valid query parameters. Other parameters (such as utm tracking codes) will be ignored,
+    // ensuring that they do not result in content being regenerated unnecessarily
+    allowQuery: ['search']
+  }
+};
+```
+
+`expiration` 속성이 필요로 된다.
+
+### Environment variables
+
+Vercel은 <a href="https://vercel.com/docs/projects/environment-variables#system-environment-variables">배포 관련 환경 변수</a> 집합을 사용할 수 있도록 한다. 다른 환경변수 같이 이런 것들은 `$env/static/private`와 `$env/dynamic/private`에서 접근할 수 있고 공공 관계자가 접근할 수 없다. 클라이언트의 이러한 변수에 접근하기 위해서는 :
+
+```
+//+layout.server.js
+import { VERCEL_COMMIT_REF } from '$env/static/private';
+ 
+/** @type {import('./$types').LayoutServerLoad} */
+export function load() {
+  return {
+    deploymentGitBranch: VERCEL_COMMIT_REF
+  };
+}
+
+//+layout.svelte
+<script>
+  /** @type {import('./$types').LayoutServerData} */
+  export let data;
+</script>
+
+<p>This staging environment was deployed from {data.deploymentGitBranch}.</p>
+```
+
+이런 변수들 모두 Vercel에서 빌드될 때 빌드 타임과 런타임 사이에서 변하지 않기 때문에 `$env/dynamic/private`보단 `$env/static/private`를 사용하는 것을 추천한다.
+
+### Notes
+
+**Vercel functions**
+
+프로젝트 루트의 `api` 디렉터리에 포함된 Vercel function를 가지고 있다면, `/api/*`에 대한 모든 요청은 SvelteKit에 의해 핸들링되지 않는다. SvelteKit 앱에서 어느 `/api/*`를 가지고 있지 않음을 확인하는게 필요한 경우 JavaScript가 아닌 언어를 사용하는 것이 필요하지 않다면 SvelteKit app에서 <a href ="https://kit.svelte.dev/docs/routing#server" >API routes</a>로서 이런 것들을 구현해야 한다.
+
+**Node version**
+
+특정 일 이전에 생성도니 프로젝트는 SvelteKit이 Node 16 이상을 필요로 한 동안 기본적으로 Node 14를 사용한다. <a href ="https://vercel.com/docs/functions/serverless-functions/runtimes/node-js#node.js-version">프로젝트 설정에서 노트 버전 변경</a>할 수 있다.
+
+### Troubleshooting
+
+**Accessing the file system**
+
+Serverless/Edge 환경에서 `fs.readFileSync`같은 방법을 통해 파일 시스템에 액세스할 수 없다. 그런 방법으로 파일에 액세스해야 한다면, <U>prerendering</U>을 통한 앱을 빌드하는 동안 해야한다. 예시의 블로그를 가지고 있고 CMS를 통해 컨텐츠를 관리하고 싶지 않다면 컨텐츠를 prerender 하고 새로운 컨텐츠를 추가할때 마다 블로그를 재배포해야한다.
