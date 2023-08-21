@@ -2374,3 +2374,423 @@ export default function (options) {
 -   필요하다면, 타겟 플랫폼에 의존성을 설치할 필요가 없도록 출력을 번들링한다.
 -   사용자의 정적파일과 생성된 JS/CSS를 타겟 플랫폼의 올바른 위치에 넣는다.
     가능한 경우 어댑터 출력을 `build/` 디렉터리 아래에 놓고 중간 출력 `.svelte-kit/[adapter-name]` 아래에 놓는 것이 좋다.
+
+## Advanced routing
+
+### Reset parameters
+
+route segment의 수는 알 수 없다면 나머지 구문을 사용할 수 있다. - 예를 들어 깃허브 파일 뷰어가 다음과 같이 구현되었다면
+
+```
+/[org]/[repo]/tree/[branch]/[...file]
+```
+
+요청은 결과적으로 페이지에서 다음 매개변수를 사용할 수 있게 된다.
+
+```
+{
+  org: 'sveltejs',
+  repo: 'kit',
+  branch: 'master',
+  file: 'documentation/docs/04-advanced-routing.md'
+}
+```
+
+> `src/routes/a/[...rest]/z/+page.svelte`는 `/a/z/` 뿐만 아니라 `/a/b/z` 및 `/a/b/c/z` 등과도 일치하게 된다. 나머지 매개변수의 값이 유효한지 체크해야 한다.
+
+**404 pages**
+나머지 매개변수는 또한 커스텀 404를 랜더링하게 한다. 주어진 이런 라우트는
+
+```
+src/routes/
+├ marx-brothers/
+│ ├ chico/
+│ ├ harpo/
+│ ├ groucho/
+│ └ +error.svelte
+└ +error.svelte
+```
+
+`/marx-brother/karl`에 방문한다면 일치하는 라우트가 없기 때문에 `/marx-borther/+error.svelte` 파일은 렌더링되지 않는다. 중첩된 에러 페이지를 렌더링하고 싶다면 모든 `/marx-brother/*` 요청과 일치한 라우트를 생성해야 하고, 404를 반환해야 한다.
+
+```
+src/routes/
+├ marx-brothers/
+| ├ [...path]/
+│ ├ chico/
+│ ├ harpo/
+│ ├ groucho/
+│ └ +error.svelte
+└ +error.svelte
+```
+
+```
+// src/routes/marx-brothers/[...path]/+page.js
+import { error } from '@sveltejs/kit';
+ 
+/** @type {import('./$types').PageLoad} */
+export function load(event) {
+  throw error(404, 'Not Found');
+}
+```
+
+> 404 케이스를 다루지 않는다면 <a href="https://kit.svelte.dev/docs/hooks#shared-hooks-handleerror">handleError</a>에서 발생할 것이다.
+
+### Optional parameters
+
+`[lang]/home`과 같은 라우트는 필요로 되는 `lang`라고 명명된 매개변수를 포함한다. 때때로 이런 매개변수는 선택적으로 만드는 것이 유익하다. 그래서 이 예시에서는 `home`과 `en/home` 모두 같은 페이지를 가리킨다. 매개 변수를 다른 대괄호 쌍으로 감싸면 이 작업을 수행할 수 있다.:`[[lang]]/home`
+매개변수가 _탐욕스럽게_ 일치하고 선택적인 매개변수는 항상 사용되지 않기 때문에 선택적 라우트 매개변수는 나머지 매개변수를 따를 수 없다.
+
+### Matching
+
+`src/routes/archive/[page]`같은 라우트는 `/archive/3`과 일치할 것이지만 `/archive/potato` 와도 일치할 것이다. 라우트 매개변수가 매개변수 문자열을 취해 유효하다면 `true`를 반환하는 *matcher*을 <a href ="https://kit.svelte.dev/docs/configuration#files">params</a> 디렉터리에 추가하고
+
+```
+/** @type {import('@sveltejs/kit').ParamMatcher} */
+export function match(param) {
+  return /^\d+$/.test(param);
+}
+```
+
+경로를 확대해서 잘 구성됨을 확인해야 한다.
+
+```
+//X
+src/routes/archive/[page]
+//O
+src/routes/archive/[page=integer]
+```
+
+경로 이름이 일치하지 않는다면 SvelteKit는 결국 404를 반환하기 전에 다른 라우트와 매치하려고 시도한다.
+matcher를 단위 테스트 하는데 사용될 수 있는 `*.test.js` 및 `*.spec.js` 파일을 제외하고, `params` 디렉터리 내 각 모듈은 matcher에 일치한다.
+
+### Sorting
+
+다중 라우트가 주어진 경로에 일치할 수 있다. 예를 들어 이런 라우트 각각은 `/foo-abc`에 일치한다:
+
+```
+src/routes/[...catchall]/+page.svelte
+src/routes/[[a=x]]/+page.svelte
+src/routes/[b]/+page.svelte
+src/routes/foo-[c]/+page.svelte
+src/routes/foo-abc/+page.svelte
+```
+
+SvelteKit은 어떤 라우트가 필요로 되는지 알 필요가 있다. 그렇게 하려면, 다음규칙을 따라 분류해야 한다.
+
+-   더 많은 특정 라우트는 더 높은 우선 순위다.
+-   <a href="https://kit.svelte.dev/docs/advanced-routing#matching">matchers</a>(`[name=type]`)가 있는 매개변수는 (`[name]`)가 없는 것보다 더 높은 우선순위를 가진다.
+-   `[[optional]]`과 `[...rest]` 매개변수는 가장 낮은 우선순위로 취급되는 경우 라우트의 최종 부분이 아니면 무시된다. 반면 `x/[[y]]/z`은 정렬을 위해 `x/z`와 동등하게 다뤄진다.
+-   묶음은 알파벳 순서로 해결된다.
+
+즉, `/foo-abc`가 `src/routes/foo-abc/+page.svelte`가 호출하고 `/foo-def`가 더 적은 특정 라우트 보다 `src/routes/foo-[c]/+page.svelte`를 호출한다.
+
+### Encoding
+
+일부 문자는 파일 시슽템에서 사용될 수 없다. - 리눅스와 맥에서는 `/`, 윈도우에서는 `\ / : * ? " < > |`. `#`과 `%`는 URL에서 특별한 의미를 가지고, `[ ] ( )` 문자는 SvelteKit에 특별한 의미를 가진다. 그래서 이런 문자들은 라우트의 일부로 직접 사용될 수 없다.
+라우트에서 이런 문자들을 사용하기 위해 nn이 16진수 문자 코드이고 `[x+nn]` 형식을 가지는 *16진수 escape sequences*를 사용할 수 있다.
+
+-   `\` — `[x+5c]`
+-   `/` — `[x+2f]`
+-   `:` — `[x+3a]`
+-   `-` — `[x+2a]`
+-   `?` — `[x+3f]`
+-   `"` — `[x+22]`
+-   `<` — `[x+3c]`
+-   `>` — `[x+3e]`
+-   `|` — `[x+7c]`
+-   `#` — `[x+23]`
+-   `%` — `[x+25]`
+-   `[` — `[x+5b]`
+-   `]` — `[x+5d]`
+-   `(` — `[x+28]`
+-   `)` — `[x+29]`
+
+예를 들어 `/foo/:->` 라우트를 생성하기 위해 `src/routes/foo/[x+3a]-[x+3e]/+page.svelte` 을 생성한다.
+JavaScript를 가진 문자에 대해 16진수 코드를 결정한다.
+
+```
+':'.charCodeAt(0).toString(16); // '3a', hence '[x+3a]'
+```
+
+*Unicode escape sequence*를 사용할 수 있다. 일반적으로 암호화되지 않은 문자를 직접 사용할 수 있으므로 그럴 필요가 없지만 emoji를 가진 파일을 가질 수 없다면 escaped 문자를 사용할 수 있다. 반면, 이것들은 동등하다:
+
+```
+src/routes/[u+d83e][u+dd2a]/+page.svelte
+src/routes/🤪/+page.svelte
+```
+
+*Unicode escape sequence*에 대한 형식은 `nnnn`이 `0000`과 `10ffff`사이의 유효한 값일 때 `[u+nnnn]`이다.
+
+> TypeScript가 앞에 오는 `.` 문자를 가진 디렉터리와 `<a href = "https://github.com/microsoft/TypeScript/issues/13399">씨름하기</a>` 때문에, 작성할 때 이러한 문자를 인코딩하는 것이 유용할 수 있다.
+
+### Advanced layouts
+
+기본적으로 `레이아웃 계층`은 `라우트 계층`을 따른다. 일부 경우, 원하는 경우가 아닐 수 있다.
+
+**(group)**
+하나의 레이아웃을 가져야 하는 'app' 경로인 일부 경로와 다른 레이아웃을 가져야 하는 'marketing' 경로가 있다. 이런 라우트를 이름이 괄호로 둘러 쌓인 디렉터리로 그룹화할 수 있다.
+
+```
+src/routes/
+│ (app)/
+│ ├ dashboard/
+│ ├ item/
+│ └ +layout.svelte
+│ (marketing)/
+│ ├ about/
+│ ├ testimonials/
+│ └ +layout.svelte
+├ admin/
+└ +layout.svelte
+```
+
+예를 들어 `/`이 `(app)`이나 `(marketing)` 페이지여야 한다면 `(group)` 내부에 직접 `+page`를 넣을 수 있다.
+
+**Breaking out of layouts**
+
+루트 레이아웃은 앱의 모든 페이지에 적용된다 - 생략된 경우 기본 값은 `<slot />`이다. 일부 페이지의 레이아웃 계층을 나머지 페이지와 다르게 하려면 공통 레이아웃을 상속하지 않는 경로를 제외한 전체 앱을 하나 이상의 그룹에 넣을 수 있다.
+
+**+page@**
+
+페이지는 경로별로 현재 레이아웃 계층에서 벗어날 수 있다. 이전 예시에서 `(app)` 그룹 내부의 `/item/[id]/embed` 라우트를 가지고 있다고 가정하자:
+
+```
+src/routes/
+├ (app)/
+│ ├ item/
+│ │ ├ [id]/
+│ │ │ ├ embed/
+│ │ │ │ └ +page.svelte
+│ │ │ └ +layout.svelte
+│ │ └ +layout.svelte
+│ └ +layout.svelte
+└ +layout.svelte
+```
+
+원래, 루트 레이아웃, `(app)` 레이아웃, `item` 레이아웃과 `[id]` 레이아웃을 상속받는다. `@` 다음에 세그먼트 이름을 추가하여 이러한 레이아웃 중 하나로 재설정할 수 있다. 이 예시에서, 다음 옵션을 선택할 수 있다.
+
+-   `+page@[id].svelte` : `src/routes/(app)/item/[id]/+layout.svelte`로 부터 상속받는다.
+-   `+page@item.svelte` : `src/routes/(app)/item/+layout.svelte`로 부터 상속받는다.
+-   `+page@(app).svelte` : `src/routes/(app)/+layout.svelte`로 부터 상속받는다.
+-   `+page@.svelte` : `src/routes/+layout.svelte`로 부터 상속받는다.
+
+**+layout@**
+
+페이지와 마찬가지로 레이아웃도 동일한 기술을 사용하여 상위 레이아웃 계층에서 벗어날 수 있다. 예를 들어, `+layout@.svelte` 컴포넌트는 모든 하위 라우트에 대해 계층을 재설정할 수 있다.
+
+```
+src/routes/
+├ (app)/
+│ ├ item/
+│ │ ├ [id]/
+│ │ │ ├ embed/
+│ │ │ │ └ +page.svelte  // uses (app)/item/[id]/+layout.svelte
+│ │ │ ├ +layout.svelte  // inherits from (app)/item/+layout@.svelte
+│ │ │ └ +page.svelte    // uses (app)/item/+layout@.svelte
+│ │ └ +layout@.svelte   // inherits from root layout, skipping (app)/+layout.svelte
+│ └ +layout.svelte
+└ +layout.svelte
+```
+
+**When to use layout groups**
+
+모든 유스케이스가 레이아웃 그룹화에 적합한 것은 아니며, 사용할 필요가 없다고 느껴서도 안된다. 유스케이스가 복합한 `(group)` 중첩이나 하나의 이상치에 대해 `(group)`을 소개하지 않으려는 것을 초래한다. 원하는 것을 달성하기 위해 합성이나 if 구문과 같은 다른 수단을 사용하는 것은 완벽하게 좋다. 다음 예제에서는 루트 레이아웃으로 되감기하고 다른 레이아웃에서도 사용할 수 있는 컴포넌트 및 functions을 재사용하는 레이아웃을 보여준다.:
+
+```
+// +layout@.svelte
+<script>
+  import ReusableLayout from '$lib/ReusableLayout.svelte';
+  export let data;
+</script>
+
+<ReusableLayout {data}>
+  <slot />
+</ReusableLayout>
+
+// +layout.js
+import { reusableLoad } from '$lib/reusable-load-function';
+ 
+/** @type {import('./$types').PageLoad} */
+export function load(event) {
+  // Add additional logic here, if needed
+  return reusableLoad(event);
+}
+```
+
+## Hooks
+
+'Hooks'는 SvelteKit가 특정 이벤트에 응답하여 호출한다고 선언하는 앱 전체 function으로 프레임워크의 동작을 세분화하여 제어할 수 있다.
+둘 모두 선택적인 hook 파일이 있다. :
+
+-   `src/hooks.server.js` : 앱의 서버 hooks
+-   `src/hooks.client.js` : 앱의 클라이언트 hooks
+
+이러한 모듈의 코드는 애플리케이션이 시작될 때 실행되므로 데이터베이스 클라이언트를 초기화하는데 유용하다.
+
+> 이러한 파일의 위치를 <a href ="https://kit.svelte.dev/docs/configuration#files">config.kit.files.hooks</a>로 구성할 수 있다.
+
+### Server hooks
+
+다음 hooks은 `src/hooks.server.js`에 추가될 수 있다.
+
+**handle**
+
+이 functions은 SvelteKit 서버가 응답을 받을 때마다 실행되며(앱이 실행되는 중에 발생하는지 prerendering 중에 발생하는지), 응답을 결정한다. 라우ㅡ를 렌더링하고 `Response`를 생성하며 `resolve`로 불리는 function과 요청을 나타내는 `event` 객체를 받는다. 응답 헤더나 바디를 변경하거나 SvelteKit 전체를 우회하도록 한다.
+
+```
+// src/hooks.server.js
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+  if (event.url.pathname.startsWith('/custom')) {
+    return new Response('custom response');
+  }
+ 
+  const response = await resolve(event);
+  return response;
+}
+```
+
+> 이미 prerendering된 페이지를 포함하는 정적 자산에 대한 요청은 SvelteKit에 의해 핸들링 되지 않는다.
+
+구현되지 않았다면 기본적으로 `({event, resolve}) => resolve(event)`이다. 커스텀 데이터를 `+server.js`의 핸들러와 서버 `load` functions로 통과하는 요청에 추가하려면, `event.device` 객체를 채워야 한다.
+
+```
+// src/hooks.server.js
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+  event.locals.user = await getUserInformation(event.cookies.get('sessionid'));
+ 
+  const response = await resolve(event);
+  response.headers.set('x-custom-header', 'potato');
+ 
+  return response;
+}
+```
+
+다중 `handle` function을 정의하고 <a href = "https://kit.svelte.dev/docs/modules#sveltejs-kit-hooks">sequence helper function</a>로 실행할 수 있다.
+`resolve`는 응답을 렌더링하는 방법을 보다 자세히 제어할 수 있는 두 번째, 선택적 매개변수를 지원한다. 그 매개변수는 다음 필드를 가진 객체다 :
+
+-   `transformPageChunk(opts: { html: string, done: boolean }): <a href = "https://kit.svelte.dev/docs/types#private-types-maybepromise">MaybePromise</a><string | undefined>` : 커스텀 변형을 HTML에 적용한다. `done`이 true라면, 마지막 chunk다. Chunks는 잘 형성된 HTML로 보장되지 않지만, `%sveltekit.head%` 또는 layout/page 컴포넌트와 같은 합리적인 경계에서 항상 분할된다.
+-   `filterSerializedResponseHeader(name: string, value: string): boolean` : `load` function이 `fetch`를 가진 자원을 로드할 때, 어떤 헤더가 나열된 응답에 포함될 수 있는지 결졍한다. 기본적으로 아무것도 포함되지 않는다.
+-   `preload(input: { type: 'js' | 'css' | 'font' | 'asset', path: string}): boolean` : `<head>` 태그에 추가할 파일을 미리 로드할 파일을 결정한다. 이 메서드는 코드 청크를 구성하는 동안 빌드 시에 발견된 각 파일과 함께 호출된다. 빌드 시 발생하는 분석에 따라 달리지기 때문에 개발 모드에서 `preload`가 호출되지 않는다. 프리로딩은 자산을 더 빨리 다운로드 해서 성능을 향상시킬 수 있지만 불필요하게 너무 많이 다운로드되면 손상이 될 수 있다. 기본적으로 `js`와 `css` 파일은 프리로딩된다. `asset` 파일은 현재 전혀 프리로딩 되지 않지만 피드백 평가 후에 이를 추가할 수 있다.
+
+```
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+  const response = await resolve(event, {
+    transformPageChunk: ({ html }) => html.replace('old', 'new'),
+    filterSerializedResponseHeaders: (name) => name.startsWith('x-'),
+    preload: ({ type, path }) => type === 'js' || path.includes('/important/')
+  });
+ 
+  return response;
+}
+```
+
+`resolve(...)`은 절대 error를 throw하지 않고 항상 적절한 상태 코드를 가진 `Promise<Response>`를 반환한다. 에러가 `handle`동안 어디서든 발생하면, 치명적인 것으로 취급되고, SvelteKit는 `Accept` 헤더에 따라 오류에 대한 JSON 표현 또는 src/error.html을 통해 커스텀할 수 있는 fallback error 페이지로 응답한다. 오류 처리에 대한 자세한 내용은 <a href = "https://kit.svelte.dev/docs/errors">여기</a>에서 확인할 수 있다.
+
+**handleFetch**
+
+이 function은 서버에서 실행하는 `load`나 `action` function 내부에서 발생하는 `fetch` 요청을 변경토록 한다.
+예를 들어 `load` function은 사용자가 해당 페이지로 클라이언트 측 탐색을 수행할 때 공용 URL으로의 요청을 만들지만 SSR 동안 API를 직접 입력하는 것이 합리적일 수 있다.
+
+```
+/** @type {import('@sveltejs/kit').HandleFetch} */
+export async function handleFetch({ request, fetch }) {
+  if (request.url.startsWith('https://api.yourapp.com/')) {
+    // clone the original request, but change the URL
+    request = new Request(
+      request.url.replace('https://api.yourapp.com/', 'http://localhost:9999/'),
+      request
+    );
+  }
+ 
+  return fetch(request);
+}
+```
+
+_<U>Credentials</U>_
+동일 origin 요청의 경우, SvelteKit의 `fetch` 구현은 `credentials` 옵션이 `"omit"`이 설정되지 않았다면 `cookie`와 `authorization` 헤더를 전달한다.
+cross-origin 요청의 경우, 요청된 URL이 앱의 하위 도메인에 속한다면 `cookie`는 포함된다.
+앱과 API의 자매 하위 도메인일 경우, SvelteKit는 쿠키가 어떤 도메인에 속하는지 알 수 없기 때문에 공통 부모 도메인에 속한 쿠키는 포함되지 않는다. 이 경우 `handleFetch`를 사용해서 쿠키를 수동으로 포함할 필요가 있다.
+
+```
+/** @type {import('@sveltejs/kit').HandleFetch} */
+export async function handleFetch({ event, request, fetch }) {
+  if (request.url.startsWith('https://api.my-domain.com/')) {
+    request.headers.set('cookie', event.request.headers.get('cookie'));
+  }
+ 
+  return fetch(request);
+}
+```
+
+### Shared hooks
+
+다음은 `src/hooks.server.js`와 `src/hooks.client.js`에 추가된다.
+
+**handleError**
+
+예상치 않은 에러가 로딩이나 렌더링동안 발생하면 이 function은 `error`과 `event`로 호출된다. 두 가지를 허용한다. :
+
+-   오류를 기록할 수 있다.
+-   메시지 및 스택 추적과 같은 중요한 세부 정보를 생략하고 사용자에게 안전하게 표시할 수 있는 오류에 대한 커스텀 표현을 생성할 수 있습니다. 반환 값은 `$page.error`의 값이 된다. 404인 경우 `{ message: 'Not Found'}`이 기본 값이고, 그 외 모든 경우에는 `message : 'Internal Error'}`이 기본 값이다. type-safe하게 만들려면 `App.Error` 인터페이스를 선언해서 예상된 모양을 커스텀할 수 있다.
+
+다음 코드는 에러 모양을 `{ message: string; errorId: string}`으로 입력하고 `handleError` function에서 반환하는 예를 보여준다.
+
+```
+// src.app.d.ts
+declare global {
+  namespace App {
+    interface Error {
+      message: string;
+      errorId: string;
+    }
+  }
+}
+ 
+export {};
+
+// src/hooks.server.js
+import * as Sentry from '@sentry/node';
+import crypto from 'crypto';
+ 
+Sentry.init({/*...*/})
+ 
+/** @type {import('@sveltejs/kit').HandleServerError} */
+export async function handleError({ error, event }) {
+  const errorId = crypto.randomUUID();
+  // example integration with https://sentry.io/
+  Sentry.captureException(error, { extra: { event, errorId } });
+ 
+  return {
+    message: 'Whoops!',
+    errorId
+  };
+}
+
+// src/hooks.client.js
+import * as Sentry from '@sentry/svelte';
+ 
+Sentry.init({/*...*/})
+ 
+/** @type {import('@sveltejs/kit').HandleClientError} */
+export async function handleError({ error, event }) {
+  const errorId = crypto.randomUUID();
+  // example integration with https://sentry.io/
+  Sentry.captureException(error, { extra: { event, errorId } });
+ 
+  return {
+    message: 'Whoops!',
+    errorId
+  };
+}
+```
+
+> `src/hooks.client.js`에서 `handleError`의 유형은 `<a href = "https://kit.svelte.dev/docs/types#public-types-handleservererror">HandleServerError</a>` 대신 `<a href="https://kit.svelte.dev/docs/types#public-types-handleclienterror">HandleClientError</a>`이고, `event`는 `<a href ="https://kit.svelte.dev/docs/types#public-types-requestevent">RequestEvent</a>`보단 `<a href = "https://kit.svelte.dev/docs/types#public-types-navigationevent">NavigationEvent</a>`이다.
+
+이 function은 _예상된_ 에러에 대해 호출되지 않는다.
+개발 동안, 에러는 Svelte 코드에서 syntax error 때문에 발생하면, 전달된 오류에는 오류의 위치를 강조하는 `frame` 속성이 추가된다.
+
+> `handleError`은 절대 throw 되지 않는다는 것을 확인한다.
