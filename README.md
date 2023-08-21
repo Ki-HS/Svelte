@@ -2340,3 +2340,37 @@ export function load() {
 **Accessing the file system**
 
 Serverless/Edge 환경에서 `fs.readFileSync`같은 방법을 통해 파일 시스템에 액세스할 수 없다. 그런 방법으로 파일에 액세스해야 한다면, <U>prerendering</U>을 통한 앱을 빌드하는 동안 해야한다. 예시의 블로그를 가지고 있고 CMS를 통해 컨텐츠를 관리하고 싶지 않다면 컨텐츠를 prerender 하고 새로운 컨텐츠를 추가할때 마다 블로그를 재배포해야한다.
+
+## Writing adapters
+
+선호되는 환경에 대한 어댑터가 아직 존재하지 않는다면 고유한 것을 빌드할 수 있다. 사용자와 유사한 <a href ="https://github.com/sveltejs/kit/tree/master/packages">플랫폼의 어댑터 소스를 보고</a> 시작점으로 복사하는 것이 좋다.
+어댑터 패키지는 `<a href = "https://kit.svelte.dev/docs/types#public-types-adapter">Adapter</a>`를 생성하는 다음 API를 구현해야 한다.
+
+```
+/** @param {AdapterSpecificOptions} options */
+export default function (options) {
+  /** @type {import('@sveltejs/kit').Adapter} */
+  const adapter = {
+    name: 'adapter-package-name',
+    async adapt(builder) {
+      // adapter implementation
+    }
+  };
+
+  return adapter;
+}
+```
+
+`adapt` 방법 내에서 어댑터는 다음과 같은 여러 가지 작업을 수행해야 한다. :
+
+-   빌드 디렉터리를 비우기
+-   SvelteKit 결과물을 `build.writeClient`, `build.writeServer`, `builder.write.writePrerendered`와 함께 작성
+-   다음과 같은 코드를 출력한다.:
+    -   `${builder.getServerDirectory()}/index.js`에서 `<a href="https://kit.svelte.dev/docs/types#public-types-server">Server</a>` 호출
+    -   `builder.generateManifest({relativePath})`로 생성된 매니페스트로 앱을 인스턴스화 한다.
+    -   플랫폼에서 요청을 듣고, 필요하다면 기본적인 <a href= "https://developer.mozilla.org/en-US/docs/Web/API/Request">요청</a>으로 바꾸고, `<a href="https://developer.mozilla.org/en-US/docs/Web/API/Response">응답</a>`을 생성하고 연관시키는 `server.respond(request,{getClientAddress})` function을 호출한다.
+    -   모든 플랫폼 특화 정보를 `server.respond`으로 통과하는 `platform` 옵션을 통해 SvelteKit에 노출한다.
+    -   필요하다면, 타겟 플랫폼에서 동작하기 위해 `fetch`를 shim 한다. SvelteKit는 `undici`를 사용할 수 있는 플랫폼을 위한 `@sveltejs/kit/node/polyfills` 헬퍼를 제공한다.
+-   필요하다면, 타겟 플랫폼에 의존성을 설치할 필요가 없도록 출력을 번들링한다.
+-   사용자의 정적파일과 생성된 JS/CSS를 타겟 플랫폼의 올바른 위치에 넣는다.
+    가능한 경우 어댑터 출력을 `build/` 디렉터리 아래에 놓고 중간 출력 `.svelte-kit/[adapter-name]` 아래에 놓는 것이 좋다.
