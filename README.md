@@ -2794,3 +2794,648 @@ export async function handleError({ error, event }) {
 개발 동안, 에러는 Svelte 코드에서 syntax error 때문에 발생하면, 전달된 오류에는 오류의 위치를 강조하는 `frame` 속성이 추가된다.
 
 > `handleError`은 절대 throw 되지 않는다는 것을 확인한다.
+
+## Errors
+
+에러는 소프트웨어 개발의 피할 수 없는 사실이다. SvelteKit는 오류가 발생하는 위치, 오류 종류 및 수신 요청의 성격에 따라 오류를 다르게 처리한다.
+
+### Error objects
+
+SvelteKit은 예상된 오류와 예상하지 못한 오류를 구분하며 기본적으로 두 오류 모두 단순한 `{message : string}` 객체로 표시된다. `code`나 추적하는 `id` 같은 추가 속성을 추가할 수 있다.
+
+### Expected errors
+
+_예상한_ 에러는 `@sveltejs/kit`에서 가져온 에러 헬퍼를 사용하여 생성된 오류다.
+
+```
+// src/routes/blog/[slug]/+page.server.js
+import { error } from '@sveltejs/kit';
+import * as db from '$lib/server/database';
+ 
+/** @type {import('./$types').PageServerLoad} */
+export async function load({ params }) {
+  const post = await db.getPost(params.slug);
+ 
+  if (!post) {
+    throw error(404, {
+      message: 'Not found'
+    });
+  }
+ 
+  return { post };
+}
+```
+
+그러면 SvelteKit가 응답 상태 코드를 404로 설정하고 `+error.svelte` 컴포넌트를 렌더링하도록 합니다. 여기서 `$page.error`는 `error(...)`의 두 번째 인수로 제공된 개체입니다.
+
+```
+// +errror.svelte
+<script>
+  import { page } from '$app/stores';
+</script>
+
+<h1>{$page.error.message}</h1>
+```
+
+필요하다면 추가 속성을 에러 객체에 추가할 수 있다.
+
+```
+throw error(404, {
+  message: 'Not found',
+	code: 'NOT_FOUND'
+});
+```
+
+그렇지 않다면, 편의를 위해, 두번째 인자로 문자열을 전달할 수 있다.
+
+```
+//X
+throw error(404, {message : 'Not found});
+//O
+throw error(404, 'Not found');
+```
+
+### Unexpected errors
+
+_예상치 못한_ 에러는 요청을 처리하는 동안 발생하는 다른 예외다. 이러한 오류에는 중요한 정보가 포함될 수 있으므로 사용자에게 예상치 못한 오류 메시지와 스택 추적이 노출되지 않는다.
+기본적으로 사용자에게 노출되는 오류는 일반적인 모양인 반면 예기치 않은 오류는 콘솔에 인쇄된다.
+
+```
+{ "message" : "Internal Error"}
+```
+
+예상치 못한 에러는 handleError hook을 통해 발생하며, 이 후크에서는 자신의 오류 처리를 추가할 수 있다.
+
+```
+// src/hooks.server.js
+import * as Sentry from '@sentry/node';
+ 
+Sentry.init({/*...*/})
+ 
+/** @type {import('@sveltejs/kit').HandleServerError} */
+export function handleError({ error, event }) {
+  // example integration with https://sentry.io/
+  Sentry.captureException(error, { extra: { event } });
+ 
+  return {
+    message: 'Whoops!',
+    code: error?.code ?? 'UNKNOWN'
+  };
+}
+```
+
+### Responses
+
+`handle`이나 +server.js 요청 핸들러 내부에서 에러가 발생한다면, SvelteKit는 요청의 `Accept` 헤더에 따라 fallback error 에러나 에러 객체의 JSON 표현으로 응답한다.
+`src/error.html`파일을 추가해서 fallback error page을 커스텀할 수 있다.
+
+```
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>%sveltekit.error.message%</title>
+  </head>
+  <body>
+    <h1>My custom error page</h1>
+    <p>Status: %sveltekit.status%</p>
+    <p>Message: %sveltekit.error.message%</p>
+  </body>
+</html>
+```
+
+SvelteKit는 `%sveltekit.status%`와 `%sveltekit.error.message%`을 일치하는 값으로 대체한다.
+페이지를 렌더링하는 동안 `load` function 내부에서 오류가 발생하면 SvelteKit는 오류가 발생한 위치에 가장 가까운 +error.svelte 컴포넌트를 렌더링한다. `+layout(.server).js`의 `load` function 내부에서 오류가 발생하면 트리에서 가장 가까운 에러 경계는 레이아웃 위의 `+error.svelte`다.
+루트 레이아웃에 일반적으로 +error.svelte 컴포넌트가 포함되므로 루트 `+layout.js` 또는 `+layout.server.js` 내부에서 오류가 발생하는 경우는 예외다. 이 경우 SvelteKit는 fallback error 페이지를 사용한다.
+
+### Type safety
+
+TypeScript를 사용하고 있고 오류의 모양을 커스텀해야 하는 경우 `App.Error`을 선언하여 커스텀할 수 있다.
+
+```
+declare global {
+  namespace App {
+    interface Error {
+			code: string;
+			id: string;
+    }
+  }
+}
+
+export {};
+```
+
+이 인터페이스는 항상 `message: string` 속성을 포함한다.
+
+## Link options
+
+SvelteKit에서 `<a>` 요소는 앱의 라우트 간 이동하는데 사용된다. 사용자가 `href`가 app에 의해 '소유된' 링크를 클릭한다면 SvelteKit은 코드를 가져오고 데이터를 fetch가 필요로 되는 모든 `load` function을 호출하는 새로운 페이지로 이동한다.
+`data-sveltekit-*` 속성을 가진 링크의 행동을 커스텀 할 수 있다. 이는 `<a>` 자체나 부모 속성에 적용될 수 있다.
+이 옵션은 GET method 인 `<form>` 요소에 적용할 수 있다.
+
+### data-sveltekit-preload-data
+
+사용자가 링크를 클릭한 것을 브라우저가 등록하기 전에, 마우스를 올렸는거나 `touchsmart`나 `mousedown` 이벤트가 발생한 것을 감지한다. 두 경우에서 `click` 이벤트가 발생할 것이라는 학습된 추측을 할 수 있다.
+SvelteKit는 이 정보를 사용하여 코드를 가져오고 페이지의 데이터를 가져오는 작업을 먼저 시작할 수 있으며, 이를 통해 수백 밀리초의 추가 시간을 얻을 수 있다.
+두 개의 값 중 하나를 가진 `data-sveltekit-preload-data` 속성을 가진 동작을 제어할 수 있다.:
+
+-   `"hover"`은 링크 위에 마우스가 멈출때 프리로딩이 시작된다는 것을 의미한다. 모바일에서는 `touchsmart`일 때 시작한다.
+-   `"tap"`은 `touchsmart`나 `mousedown` 이벤트가 등록되자마자 프리로딩이 시작된다는 것을 의미한다.
+    기본 프로젝트 템플릿은 `src/app.html`에서 `<body>`에 적용된 `data-sveltekit-preload-data = "hover"` 속성을 가졌다. 즉, 모든 링크는 기본적으로 호버되면 프리로딩된다.
+
+```
+<body data-sveltekit-preload-data="hover">
+  <div style="display: contents">%sveltekit.body%</div>
+</body>
+```
+
+때때로, 사용자가 링크에 호버할 때 `load`를 호출하는 것은 가짜 긍정을 초래하거나 데이터가 너무빨리 업데이트되고 딜레이가 오래 걸릴 수 있기 때문에 불필요할 수 있다.
+이런 경우에는 SvelteKit이 사용자가 링크를 클릭했을때만 `load`를 호출하도록 하는 `"tap"`값을 지정할 수 있다.
+
+```
+<a data-sveltekit-preload-data="tap" href="/stonks">
+  Get current stonk values
+</a>
+```
+
+> 프로그래밍 방식으로 `$app/navigation`에서 `preloadData`를 호출할 수 있다.
+
+### data-sveltekit-preload-code
+
+링크에 대해 데이터를 프리로딩하고 싶지 않은 경우에도 코드를 프리로딩하는게 유용할 수 있다. `data-sveltekit-preload-code` 속성은 네 가지중 하나를 가지는 경우를 제외하고 `data-sveltekit-preload-data`처럼 동작한다.:
+
+-   `"eager"` : 바로 프리로딩되는 링크
+-   `"viewport"` : viewport에 한번 방문하면 프리로딩 되는 링크
+-   `"hover"` : 코드만 프리로딩되는 것을 제외하고 `data-sveltekit-preload-data`에서처럼 동작한다.
+-   `"tap"` : 코드만 프리로딩되는 것을 제외하고 `data-sveltekit-preload-data`에서처럼 동작한다.
+
+`viewport`와 `eager`은 이동 직후 DOM에 있는 링크에만 적용된다. 이는 변경 사항에 대한 DOM을 적극적으로 관찰함으로써 발생하는 성능 저하를 방지하기 위한 것이다.
+
+> 프리로딩 코드는 데이터 프리로딩의 전제조건이기때문에 이 속성은 존재하는 모든 `data-sveltekit-preload-data` 속성보다 더 열망적인 값을 지정하는 경우에만 미친다.
+
+### data-sveltekit-reload
+
+우연히 SvelteKit에게 링크를 처리하지 말고 브라우저가 링크를 처리하도록 해야 한다.
+
+```
+<a data-sveltekit-reload href="/path">Path</a>
+```
+
+`data-sveltekit-reload` 속성을 링크에 추가하는 것은 링크가 클릭되면 전체 페이지 이동을 발생시킨다.
+`rel="external"` 속성을 가진 링크는 같은 처리를 받는다. 게다가, 프리렌더링 동안 무시된다.
+
+### data-sveltekit-replacestate
+
+때때로 이동을 통해 브라우저의 세션 기록에 새 항목이 생성되지 않도록 할 수 있다.
+
+```
+<a data-sveltekit-replacestate href="/path">Path</a>
+```
+
+링크에 `data-sveltekit-replacestate` 추가하는 것은 새로운 것을 생성하는 것보다 현재 `history` 엔트리를 링크가 클릭되면 `pushState`로 대체한다.
+
+### data-sveltekit-keepfocus
+
+이동 후에 포커스를 재설정하고 싶지 않을 때가 있다. 예를 들어 사용자가 입력할 때 제출하는 검색폼을 가지고 있고 텍스트 입력에 포커스를 맞추고 싶다.
+
+```
+<form data-sveltekit-keepfocus>
+  <input type="text" name="query">
+</form>
+```
+
+`data-sveltekit-keepfocus` 속성을 추가하는 것은 이동후에도 현재 포커싱된 요소가 포커스를 유지하도록 한다. 일반적으로 포커싱된 요소는 `<a>` 태그와 화면 판독기가 될 수 있고 다른 보조 기술 사용자들은 종종 이동 후 포커스가 이동될 것으로 예상하기 때문에 링크에서 이 속성을 사용하는 것을 피해야 한다. 이동 후에도 유지하길 원하는 요소에만 이 속성을 사용해야 한다. 더 이상 요소가 존재하지 않는다면, 사용자의 포커스는 소실되어 보조 기술 사용자에게 혼란스러운 경험을 제공한다.
+
+### data-sveltekit-noscroll
+
+내부 링크로 이동할 때, SvelteKit는 브라우저의 기본 이동 동작을 따라한다: 스크롤 위치를 0,0으로 바꿔서 사용자가 페이지의 최상단 좌측에 위치하도록 한다.
+특정 케이스에서 이 동작을 비활성화 하고 싶을 수 있다.
+
+```
+<a href="path" data-sveltekit-noscroll>Path</a>
+```
+
+`data-sveltekit-noscroll`을 추가하는 것은 링크 클릭 후에 스크롤을 방지한다.
+
+### Disabling options
+
+활성화된 요소 내에서 이러한 옵션을 비활성화 하려면, `false` 값을 사용해야 한다:
+
+```
+<div data-sveltekit-preload-data>
+  <!-- these links will be preloaded -->
+  <a href="/a">a</a>
+  <a href="/b">b</a>
+  <a href="/c">c</a>
+
+  <div data-sveltekit-preload-data="false">
+    <!-- these links will NOT be preloaded -->
+    <a href="/d">d</a>
+    <a href="/e">e</a>
+    <a href="/f">f</a>
+  </div>
+</div>
+```
+
+요소에 속성을 조건부로 적용하려면 이렇게 하면된다.
+
+```
+<div data-sveltekit-reload={shouldReload}>
+```
+
+## Service workers
+
+서비스 워커는 앱 내부에서 네트워크 요청을 다루는 프록시 서버처럼 행동한다. 이는 오프라인에서 앱이 동작하도록 만들지만 오프라인을 지원하는 것이 필요하지 않더라도 내장된 JS와 CSS를 precaching하면서 탐색 속도를 향상시키는데 서비스 워커를 사용하는 것이 유용할때도 있다.
+SvelteKit에서 `src/service-worker.js`가 있다면 번들링되고 자동으로 등록된다. 필요하다면 `<a href = "https://kit.svelte.dev/docs/configuration#files">서비스 워커의 위치</a>`는 바뀐다.
+고유한 로직을 가진 서비스워커를 등록하거나 다른 방법을 사용해야 한다면 `<a href="https://kit.svelte.dev/docs/configuration#serviceworker">자동 등록 비활성화</a>`할 수 있다. 기본 등록은 이처럼 보인다:
+
+```
+if ('serviceWorker' in navigator) {
+  addEventListener('load', function () {
+    navigator.serviceWorker.register('./path/to/service-worker.js');
+  });
+}
+```
+
+### Inside the service worker
+
+서비스 워커 내부에서 모든 정적 자산, 빌드파일 및 prerendering된 페이지에 대한 경로를 제공하는 <a href="https://kit.svelte.dev/docs/modules#$service-worker">$service-worker module</a>에 액세스할 수 있다. 고유 캐시 이름을 생성하는데 사용할 수 있는 앱의 버전 문자열과 배포의 `base` 경로도 제공된다. Vite 구성이 `define`을 지정한다면, 서비스 워커와 서버/클라이언트 빌드에 적용된다.
+다음 예시는 설치된 앱과 `static`의 모든 파일을 캐시하고 다른 모든 요청이 발생할 때 캐시한다. 이렇게 하면 일단 방문ㄴ하면 각 페이지가 오프라인으로 작동한다.
+
+```
+/// <reference types="@sveltejs/kit" />
+import { build, files, version } from '$service-worker';
+
+// Create a unique cache name for this deployment
+const CACHE = `cache-${version}`;
+
+const ASSETS = [
+  ...build, // the app itself
+  ...files  // everything in `static`
+];
+
+self.addEventListener('install', (event) => {
+  // Create a new cache and add all files to it
+  async function addFilesToCache() {
+    const cache = await caches.open(CACHE);
+    await cache.addAll(ASSETS);
+  }
+
+  event.waitUntil(addFilesToCache());
+});
+
+self.addEventListener('activate', (event) => {
+  // Remove previous cached data from disk
+  async function deleteOldCaches() {
+    for (const key of await caches.keys()) {
+      if (key !== CACHE) await caches.delete(key);
+    }
+  }
+
+  event.waitUntil(deleteOldCaches());
+});
+
+self.addEventListener('fetch', (event) => {
+  // ignore POST requests etc
+  if (event.request.method !== 'GET') return;
+
+  async function respond() {
+    const url = new URL(event.request.url);
+    const cache = await caches.open(CACHE);
+
+    // `build`/`files` can always be served from the cache
+    if (ASSETS.includes(url.pathname)) {
+      return cache.match(url.pathname);
+    }
+
+    // for everything else, try the network first, but
+    // fall back to the cache if we're offline
+    try {
+      const response = await fetch(event.request);
+
+      if (response.status === 200) {
+        cache.put(event.request, response.clone());
+      }
+
+      return response;
+    } catch {
+      return cache.match(event.request);
+    }
+  }
+
+  event.respondWith(respond());
+});
+```
+
+> 캐시할 때 주의해! 일부 경우에는 오래된 데이터가 오프라인 상태에서 사용할 수 없는 데이터보다 더 나쁠 수 있다. 브라우저에서 캐시가 너무 가득 차면 캐시가 비워지기 때문에 비디오 파일과 같은 대용량 자산을 캐싱하는 것도 주의해야 한다.
+
+### During development
+
+서비스 워커는 개발 동안이 아닌 프로덕션동안 번들링된다. 그 이유로 서비스 워커의 모듈을 지원하는 브라우저만 개발 동안 사용할 수 있다. 서비스 워커를 수동으로 등록하는 경우, 개발때 `{type : 'module'}` 옵션을 통과할 필요가 있다.
+
+```
+import { dev } from '$app/environment';
+
+navigator.serviceWorker.register('/service-worker.js', {
+  type: dev ? 'module' : 'classic'
+});
+```
+
+> `build`와 `prerendered`는 개발동안 빈 배열이다.
+
+### Type safety
+
+서비스 워커에게 적절한 타입을 설정하려면 일부 수동 설정이 필요하다. `service-worker.js` 내부에서 파일에 최상단에 다음을 추가해야 한다.
+
+```
+/// <reference types="@sveltejs/kit" />
+/// <reference no-default-lib="true"/>
+/// <reference lib="esnext" />
+/// <reference lib="webworker" />
+
+const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));
+```
+
+그러면 서비스 워커 내부에서 사용할 수 없는 `HTMLElement`와 같은 DOM 형식에 대한 액세스가 비홀성화되고 올바른 전역변수가 인스턴스화 된다.
+
+### Other solutions
+
+SvelteKit의 서비스 워커 구현은 고의로 낮은 계층이다. 보다 본격적이지만 보다 전문적인 솔루션이 필요한 경우 Workbox을 사용하는 Vite PWA plugin과 같은 솔루션을 검토하는 것이 좋다. 서비스워커의 더많은 일반적인 정보에 대해 <a href ="https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers">MDN 웹 문서</a>를 추천한다.
+
+## Server-only modules
+
+좋은 친구처럼 스벨트키트는 비밀을 지킨다. 동일한 저장소에 백엔드와 프론트엔드를 작성할 때 중요한 데이터를 프론트엔드 코드(예: API 키를 포함하는 환경 변수)로 실수로 가져오기가 쉬울 수 있다. 스벨트키트는 이를 완전히 방지하는 방법을 제공한다. 서버 전용 모듈이다.
+
+### Private environment variables
+
+모듈 구역에 커버된 `$env/static/private`와 `$env/dynamic/private` 모듈은 hooks.server.js나 +page.server.js같은 서버에서만 돌아가는 모듈에만 가져와질 수 있다.
+
+### Your modules
+
+두 가지 방법으로 모듈을 서버에서만 동작하도록 만들 수 있다:
+
+-   `.server`을 파일 이름에 추가하기
+-   `$lib/server`에 놓기
+
+### How it works
+
+서버 전용 코드를 가져오는 일반적인 코드가 있을 때마다, SvelteKit는 오류가 발생된다.
+
+```
+// $lib/server/secrets.js
+export const atlantisCoordinates = [/* redacted */];
+
+// src/routes/utils.js
+export { atlantisCoordinates } from '$lib/server/secrets.js';
+ 
+export const add = (a, b) => a + b;
+
+// src/routes/+page.svelte
+<script>
+  import { add } from './utils.js';
+</script>
+
+//ERROR
+Cannot import $lib/server/secrets.js into public-facing code:
+- src/routes/+page.svelte
+  - src/routes/utils.js
+    - $lib/server/secrets.js
+```
+
+public-facing 코드가 `add` 내보내기만 사용하고 비밀 `atlantisCoordinates` 내보내기를 사용하지 않더라도 비밀 코드는 브라우저가 다운로드 하는 JavaScript로 끝날 수 있으므로 가져오기 체인은 안전하지 않을 것으로 간주된다.
+이 특징은 동적 가져오기, 심지어 `await import('./${foo}.js')와 같은 삽입된 가져오기에서도 동작하며 작은 주의 사항은 다음과 같다: 개발 중에 public-facing 코드와 서버 전용 모듈 사이에 둘 이상의 동적 가져오기가 있는 경우 코드가 처음 로드될 때 허락되지 않은 가져오기가 감지되지 않는다.
+
+> Vitest와 같은 단위 테스트 프레임워크는 서버 전용 코드와 public-facing 코드를 구분하지 않기 때문에 `process.env.TEST === 'true'`에 의해 결정되는 것처럼 테스트를 실행할 때 허락되지 않은 가져오기 탐지가 비활성화 된다.
+
+## Asset handling
+
+### Caching and inlining
+
+향상된 성능을 위해 <a href ="https://vitejs.dev/guide/assets.html">Vite는 자동으로 가져온 자산을 처리한다.</a> 해시는 이름에 추가돼서 캐시되고 `assetsInlineLimit`보다 작은 자산은 한 줄로 표시될 것이다.
+
+```
+<script>
+  import logo from '$lib/assets/logo.png';
+</script>
+
+<img alt="The project logo" src={logo} />
+```
+
+마크업에 직접 자산을 참조하길 원한다면, <a href ="https://github.com/bluwy/svelte-preprocess-import-assets">svelte-preprocess-import-assets</a>같은 전처리기를 사용할 수 있다.
+CSS `url()` 함수를 통해 포함된 자산에 대해 <a href="https://kit.svelte.dev/docs/integrations#preprocessors-vitepreprocess">vitePreprocess</a>가 유용하다는 것을 알 수 있다.
+이미지를 `.webp` 또는 `.avif`와 같은 압축 이미지 형식, 다른 장치에 대해 다른 크기의 응답 이미지 또는 개인 정보 보호를 위해 제거된 EXIF 데이터가 있는 이미지를 출력하도록 변환할 수 있다. 정적으로 포함된 이미지의 경우 <a href="https://github.com/JonasKruckenberg/imagetools">vite-imagetools</a>와 같은 Vite 플러그인을 사용할 수 있다. 또한 `Accept` HTTP 헤더 및 쿼리 문자열 매개 변수를 기반으로 적절한 변환 이미지를 제공할 수 있는 CDN을 고려할 수 있다.
+
+## Snapshots
+
+일시적인 DOM 상태는 다른 페이지로 이동할 때 버려진다.
+예를 들어, 사용자는 양식을 작성하지만 제출하기 전에 링크를 클릭한 다음 브라우저의 뒤로 가기 버튼을 누르면 입력한 값이 손실된다. 해당 입력을 보존하는 것이 중요한 경우 DOM 상태의 *snapshot*을 찍을 수 있으며, 이 *snapshot*은 사용자가 다시 탐색하면 복원될 수 있다.
+이를 하기 위해 `+page.svelte`나 `+layout.svelte`의 `capture`과 `restore` 메서드를 가진 `snapshot` 객체를 내보내야 한다:
+
+```
+// +page.server
+<script>
+  let comment = '';
+
+  /** @type {import('./$types').Snapshot<string>} */
+  export const snapshot = {
+    capture: () => comment,
+    restore: (value) => comment = value
+  };
+</script>
+
+<form method="POST">
+  <label for="comment">Comment</label>
+  <textarea id="comment" bind:value={comment} />
+  <button>Post comment</button>
+</form>
+```
+
+이 페이지에서 다른 곳으로 이동할 때, `capture` 함수는 페이지 업데이트 바로 전에 호출되고, 반환 값은 브라우저의 히스토리 스택의 현재 항목과 관련있다. 다시 돌아온다면, `restore` 함수는 페이지가 업데이트 되자마자 저장된 값을 가지고 호출된다.
+데이터를 `sessionStorage`로 유지하려면 JSON으로 직렬화할 수 있어야 한다. 상태가 페이지가 리로드되거나 사용자가 다른 사이트에서 다시 돌아올 때 복구되도록 한다.
+
+> `capture`에서 엄청 큰 객체를 반환하면 안된다. - 한번 캡쳐되면, 객체는 세션이 있는 동안 유지된다. 그리고 극한의 경우 너무 커서 `sessionStorage`를 유지할 수 없다.
+
+## Packaging
+
+`@sveltejs/package` 패키지를 사용하며 앱과 컴포넌트 라이브러리를 사용할 SvelteKit을 사용할 수 있다.
+앱을 생성할 때, `src/routes`의 컨텐츠는 public-facing stuff다.
+컴포넌트 라이브러리는 `src/lib`가 공용 비트이고 루트 `package.json`이 패키지를 퍼블리시하는데 사용된다는 점을 제외하고 SvelteKit 앱과 완전히 동일한 구조를 가진다. `src/routes`는 라이브러리를 동반하는 공식문서나 데모 사이트일 수 있거나 개발동안 사용하는 샌드박스일 수 있다.
+`@sveltejs/package`의 `svelte-package` 명령어를 수행하는 것은 `src/lib`의 컨텐츠를 취하고 다음을 포함하는 `dist` 디렉터리를 생성한다:
+
+-   `src/lib`의 모든 파일. Svelte 컴포넌트는 전처리되고, TypeScript 파일은 JavaScript로 변환된다.
+-   Svelte, JavaScript, TypeScript 파일에 대해 생성된 타입 정의. 이를 `typescript >= 4.0.0`으로 설치해야 한다. 타입 정의는 구현 옆에 배치되고, 작성한 `d.ts` 파일이 그대로 복사된다. `생성 비활성화`할 수 있지만, 하지 않는 것을 강력히 추천한다.
+    > `package.json`을 생성한 `@sveltejs/package` 버전 1. 이는 더 이상 해당되지 않으며 이제 프로젝트의 `package.json`을 사용하고 대신 정확한지 확인한다. version 1에 아직도 있는 경우 마이그레이션 지침은 <a href="https://github.com/sveltejs/kit/pull/8922">이 PR</a>을 참조해
+
+## Anatomy of a package.json
+
+공적인 목적으로 라이브러리를 빌드하고 있기 때문에, `package.json`의 컨텐츠는 더 중요해진다. 어떤 파일이 npm에 퍼블리시되는지, 라이브러리가 어떤 의존성을 가지는지 구성하고 패키지의 엔트리 포인트를 구성한다.
+
+**name**
+
+패키지의 이름이다. 다른 사람들이 그 이름을 사용해 설치할 수 있고, `http://npmjs.com/package/<name>`에서 볼 수 있다.
+
+```
+{
+  "name": "your-library"
+}
+```
+
+**license**
+
+모든 패키지는 라이선스 필드를 가져야한다. 그래서 사람들이 어떻게 그것을 사용하도록 허락받았는지 안다. 보증 없이 배포 및 재사용 측면에서 매우 허용적이고 매우 인기 있는 라이센스는 `MIT`다.
+
+```
+{
+  "license": "MIT"
+}
+```
+
+패키지에 `LICENSE`를 포함해야 한다.
+
+**files**
+
+어떤 파일을 포장하고 npm에 업로드할 것인지 알려준다. 출력 폴더를 포함해야 한다. `package.json`와 `README` 및 `LICENSE`는 항상 포함돼서 그것들을 지정할 필요없다.
+
+```
+{
+  "files": ["dist"]
+}
+```
+
+불필요한 파일을 제외하기 위해 `.npmignore`파일에 추가한다. 결과적으로 더 작은 패키지를 만들어 설치하기에 더 빨라진다.
+
+**exports**
+
+`"exports"` 필드는 패키지의 엔트리 포인트를 포함한다. `npm create svelte@latest`를 통해 새 라이브러리 프로젝트를 설정한다면 패키지 루트인 단일 내보내기를 설정한다:
+
+```
+{
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js"
+    }
+  }
+}
+```
+
+패키지에 루트라는 하나의 엔트리 포인트만 있고 모든 것이 이를 통해 가져와야 한다는 것을 번들러와 툴링에 알려준다.
+
+```
+import { Something } from 'your-library';
+```
+
+`type`와 `svlete` 키는 <a href="https://nodejs.org/api/packages.html#conditional-exports">내보내기 조건</a>이다. 라이브러리 가져오기를 찾을 때 가져올 파일이 무엇인지 툴링에 알려준다.
+
+-   TypeScript는 `types` 조건을 보고 타입 정의 파일 찾는다. 타입 정의를 퍼블리시 안한다면 이 조건을 생략한다.
+-   Svelte 인식 툴링은 `svelte` 조건을 보고 Svelte 컴포넌트 라이브러리라는 것을 안다. Svelte 컴포넌트를 내보내지 않고 Svelte가 아닌 프로젝트에서도 작동할 수 있는 라이브러리를 게시하는 경우 이 조건을 `default`로 바꿀 수 있다.
+
+> `@sveltejs/package`의 이전버전은 `package.json` 내보내기도 추가했다. 이것은 모든 툴링은 명시적으로 내보내지 않는 `package.json`을 처리할 수 있기 때문에 더이상 템플릿의 일부가 아니다.
+
+`exports`를 선호에 알맞게 조정하고 더 많은 엔트리 포인트를 제공할 수 있다. 예를 들어, 컴포넌트를 다시 내보낸 `src/lib/index.js` 파일 대신 `src/lib/Foo.svelte` 컴포넌트를 직접 노출하려는 경우 다음과 같은 내보내기 맵을 생성하고 라이브러리의 소비자가 컴포넌트를 가져올 수 있다.
+
+```
+{
+  "exports": {
+    "./Foo.svelte": {
+      "types": "./dist/Foo.svelte.d.ts",
+      "svelte": "./dist/Foo.svelte"
+    }
+  }
+}
+
+import Foo from 'your-library/Foo.svelte';
+```
+
+> 타입 정의를 제공한다면 추가적인 케어가 필요하다.
+> 일반적으로, 내보내기 맵의 각 키는 사용자가 패키지에서 가져오기 위해 사용할 경로고, 값은 가져올 파일의 경로 또는 이러한 파일의 경로를 포함하는 내보내기 조건의 맵이다.
+
+**svlete**
+
+이 필드는 툴링이 Svelte 컴포넌트 라이브러리를 인식할 수 있도록 해준 레거시 필드다. `svelte` 내보내기 조건을 사용할때 더 이상 필요하지 않지만, 아직 내보내기 조건에 대해 모르는 구식 툴링과의 하위 호환성을 위해서 지속적으로 유지하는 것이 좋다. 루트 엔트리 포인트를 가리켜야 한다.
+
+### TypeScript
+
+라이브러리를 사용할 때 적절한 인텔리센스를 얻기 위해 직접 TypeScript를 사용하지 않더라도 라이브러리에 대한 타입 정의를 보내야 한다.
+`@sveltejs/pacakge`는 타입 생성 프로세스를 대부분 불투명하게 만든다. 기본적으로 라이브러리를 패키징할 때 JavaScript, TypeScript 및 Svelte 파일에 대한 것은 내보내기 맵의 `types` 조건이 올바른 파일을 가리키도록 하는 것이다. `npm create svelte@latest`를 통해 라이브러리 프로젝트를 초기화할 때 루트 내보내기에 대해 자동으로 설정된다.
+루트 내보내기 이외의 다른 항목이 있는 경우에는 타입 정의를 제공하는 데 추가적인 주의를 기울여야 한다.
+불행히도, TypeScript는 기본적으로 `{ "./foo": { "types": "./dist/foo.d.ts", ... }}`과 같은 내보내기 `types` 조건을 해결하지 않는다. 라이브러리 루트와 관련된 `foo.d.ts`를 검색한다. 이를 해결하려면 두 가지 옵션이 있다:
+
+-   첫 번째 옵션은 라이브러리를 사용하는 사용자가 `tsconfig.json`의 `moduleResolution` 옵션을 번들러, Node 16 또는 nodenext로 설정하도록 요구하는 것이다. 이렇게 하면 TypeScript가 실제로 내보내기 맵을 보고 타입을 오바르게 해결하도록 선택된다.
+-   두 번째 옵션은 TypeScript의 `TypesVersions` function을 사용하여 유형을 연결하는 것이다. 이것은 TypeScript 버전에 따라 타입 정의를 확인하기 위해 TypeScript가 사용하는 `package.json` 내부 필드이며, 이에 대한 경로 매핑 기능도 포함한다. 이 경로 매핑 기능을 활용하여 원하는 것을 얻는다. 위에서 언급한 `foo` 내보내기의 경우, 해당 `typesVersions`는 다음과 같다:
+
+```
+{
+  "exports": {
+    "./foo": {
+      "types": "./dist/foo.d.ts",
+      "svelte": "./dist/foo.js"
+    }
+  },
+  "typesVersions": {
+    ">4.0": {
+      "foo": ["./dist/foo.d.ts"]
+    }
+  }
+}
+```
+
+`>4.0` 은 사용된 TypeScript 버전이 4보다 클 경우 TypeScript가 내부 맵을 확인하도록 말한다. 내부 맵은 TypeScript에 `library/foo`에 대한 타이핑이 `./dist/foo.d.ts` 내에서 발견된다는 것을 알려주며, 이는 기본적으로 `exports` 조건을 복제한다. 또한 `*`를 와일드카드로 사용하여 반복하지 않고 여러 타입 정의를 한 번에 사용할 수 있다. `typeVersions`를 선택한 경우 루트 가져오기를 포함하여 모든 형식 가져오기를 선언해야 한다.
+
+### Best practices
+
+패키지에 `$app`과 같은 <a href ="https://kit.svelte.dev/docs/modules">SvelteKit 관련 모듈</a>은 다른 SvelteKit 프로젝트에서만 사용할 수 있도록 의도하지 않는 한 사용을 피해야 한다. `$app/store`, `$app/navigation` 등에 직접 의존하지 않고 현재 URL이나 네비게이션 작업 등을 소품으로 전달 할 수도 있다. 보다 일반적인 방식으로 앱을 작성하면 테스트, UI, 데모 등을 위한 도구를 보다 쉽게 설정할 수 있다.
+`svelte.config.js`를 통해 <a href ="https://kit.svelte.dev/docs/configuration#alias">별칭</a>을 추가하여 `svelte-package`로 처리해야 한다.
+패키지를 변경한 것이 버그 수정인지, 새로운 기능인지, 아니면 변경 중단인지 신중하게 생각하고 그에 따라 패키지 버전을 업데이트 해야 한다. 기존 라이브러리에서 `exports` 또는 내부의 `export` 조건에서 경로를 제거하면 변경 사항이 발생하는 것으로 간주된다.
+
+```
+{
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+// changing `svelte` to `default` is a breaking change:
+			"default": "./dist/index.js"
+    },
+// removing this is a breaking change:
+// adding this is ok:
+		"./bar": {
+			"types": "./dist/bar.d.ts",
+			"svelte": "./dist/bar.js",
+			"default": "./dist/bar.js"
+		}
+  }
+}
+```
+
+### Options
+
+`svelte-package`는 다음 옵션을 허용한다:
+
+-   `-w`/`--watch` : `src/lib`의 파일에서 변경 사항을 확인하고 패키지를 재구성한다.
+-   `-i`/`--input` : 패키지의 모든 파일을 포함하는 input 디렉터리. 기본값은 `src/lib`이다.
+-   `-o`/`--output` : 처리된 파일이 기록되는 output 디렉터리. `package.json`의 `export`는 그 안에 있는 파일을 가리키고, 파일 배열은 그 폴더를 포함해야 한다. 기본 값은 `dist`다.
+-   `-t`/`--types` : 타입 정의(d.ts 파일)를 만들 것인지의 여부. 생태계 라이브러리 품질을 향상시키므로 이 작업을 수행하는 것이 좋다. 기본 값은 `true`다.
+
+## Publishing
+
+생성된 패키지를 퍼블리시하기:
+
+```
+npm publish
+```
+
+### Caveats
+
+모든 상대적인 파일 가져오기는 노드의 ESM 알고리즘을 준수하여 완전히 지정해야 한다. 따라서 `src/lib/something/index.js`와 같은 파일의 경우 확장자가 있는 파일의 이름을 포함해야 한다:
+
+```
+//X
+import { something } from './something';
+
+//O
+import { something } from './something/index.js';
+```
+
+TypeScript를 사용한다면 `.ts` 파일 ending이 아니라 `.js` 파일 ending을 사용하여 같은 방식으로 `.ts` 파일을 가져와야 한다.
+`tsconfig.json` 또는 `jsconfig.json`에서 `"moduleResolution" : "NodeNext"`를 설정하면 이러한 작업에 도움이 된다.
+전처리된 Svelte 파일 및 JavaScript로 변환된 TypeScript 파일을 제외한 모든 파일은 그대로 복사된다.
