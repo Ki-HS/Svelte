@@ -3439,3 +3439,38 @@ import { something } from './something/index.js';
 TypeScript를 사용한다면 `.ts` 파일 ending이 아니라 `.js` 파일 ending을 사용하여 같은 방식으로 `.ts` 파일을 가져와야 한다.
 `tsconfig.json` 또는 `jsconfig.json`에서 `"moduleResolution" : "NodeNext"`를 설정하면 이러한 작업에 도움이 된다.
 전처리된 Svelte 파일 및 JavaScript로 변환된 TypeScript 파일을 제외한 모든 파일은 그대로 복사된다.
+
+## Why your load functions are slow
+
+waterfall이 발생하지 않도록 해야한다.
+같은 계층에서 Promise는 동시에 시작하지만 끝나는 시간이 다르기 때문에 모두 끝날 때까지 기다린다.
+
+```
+const a = async ()=>{
+  await setTimeout(1000, "a");
+}
+
+const b = async ()=>{
+  await setTimeout(1000, "b");
+}
+
+const c = async ()=>{
+  await setTimeout(1000, "c");
+}
+
+//result
+거의 1초
+
+//waterfall 발생해서 1+3
+const a = async ()=>{
+  await setTimeout(1000, "a");
+  await setTimeout(3000, "a");
+}
+const b = async ()=>{
+  await setTimeout(1000, "b");
+}
+//result
+거의 4초
+```
+
+따라서, 하나의 메서드로 여러 동작을 취하기 보단 비동기 함수 여러 개로 나눠 동시에 시작하면 보다 빠르다.
