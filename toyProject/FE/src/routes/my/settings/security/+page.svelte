@@ -1,25 +1,24 @@
 <script>
-    import {Modal} from "$lib/components"
 
-    export let form
-
-    let emailModalOpen
-    $: emailModalOpen = false
+	import { Input } from "$lib/components";
 
 </script>
 
 
-<div class="flex flex-col w-full h-full space-y-12">
+<div class="flex flex-col w-full h-full">
     <div class="w-full">
-        <h3 class="text-2xl font-medium">Change Email</h3>
-        <div class="divider"></div>
-        <Modal label="change-email" checked={emailModalOpen}>
-            <span slot="trigger" class ="btn btn-primary">Change Email</span>
-            <h3 slot="heading">Change Your EMail</h3>
-            <form action="?/updateEmail" method="POST" class="space-y-2">
-                <input type="email" id="email" required={true} value={form?.data?.email}/>
-            </form>
-            <button type ="submit" class ="btn btn-primary w-full">Change My email</button>
-        </Modal>
+        <form action="?/updatePassword" method="POST" class="flex flex-col space-y-2 w-full">
+            <h3 class="text-2xl fone-medium">Change Password</h3>
+            <div class="divider"></div>
+            <Input id="oldPassword" label ="Old Password" type="password" required/>
+            <Input id="password" label = "New Password" type="password" required/>
+            <Input id = "passwordConfirm" label = "Confirm New Password" type = "password" required/>
+            <a href="/reset-password" class= "text-primary hover:cursor-point hover:underline">Forgot password?</a>
+            <div class="w-full max-w-lg pt-3">
+                <button class="btn btn-primary w-full max-w-lg" type="submit">
+                    Update Password
+                </button>
+            </div>
+        </form>
     </div>
 </div>
