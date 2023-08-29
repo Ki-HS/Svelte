@@ -5,7 +5,7 @@ export const actions = {
 		const body = Object.fromEntries(await request.formData());
 
 		try {
-			await locals.pb.collection('users2').authWithPassword(body.email, body.password);
+			await locals.pb.collection('users').authWithPassword(body.email, body.password);
 			if (!locals.pb?.authStore?.model?.verified) {
 				locals.pb.authStore.clear();
 				return {

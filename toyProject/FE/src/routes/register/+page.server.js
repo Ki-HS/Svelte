@@ -8,8 +8,8 @@ export const actions = {
 		let username = generateUseranme(body.name.split(' ').join('')).toLowerCase();
 		console.log({ username, ...body });
 		try {
-			await locals.pb.collection('users2').create({ username, ...body });
-			await locals.pb.collection('users2').requestVerification(body.email);
+			await locals.pb.collection('users').create({ username, ...body });
+			await locals.pb.collection('users').requestVerification(body.email);
 		} catch (err) {
 			console.log(err);
 			throw error(500, 'Something wrong');

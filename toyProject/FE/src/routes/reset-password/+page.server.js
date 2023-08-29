@@ -5,7 +5,7 @@ export const actions = {
 		const body = Object.fromEntries(await request.formData());
 
 		try {
-			await locals.pb.collection('users2').requestPasswordReset(body.email);
+			await locals.pb.collection('users').requestPasswordReset(body.email);
 			return {
 				success: true
 			};

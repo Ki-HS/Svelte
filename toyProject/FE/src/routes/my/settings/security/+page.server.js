@@ -5,7 +5,7 @@ export const actions = {
 		const data = Object.fromEntries(await request.formData());
 
 		try {
-			await locals.pb.collection('users2').update(locals.user.id, data);
+			await locals.pb.collection('users').update(locals.user.id, data);
 			locals.pb.authStore.clear();
 		} catch (err) {
 			console.log(err);

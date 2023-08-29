@@ -1,3 +1,4 @@
 import Input from './input.svelte';
 import Modal from './modal.svelte';
-export { Input, Modal };
+import MyProjectItem from './myProjectItem.svelte';
+export { Input, Modal, MyProjectItem };

@@ -5,7 +5,7 @@ export const actions = {
 		const data = Object.fromEntries(await request.formData());
 		console.log(locals);
 		try {
-			await locals.pb.collection('users2').requestEmailChange(data.email);
+			await locals.pb.collection('users').requestEmailChange(data.email);
 		} catch (err) {
 			console.log(err.response);
 			throw error(err.status, err.message);
@@ -19,12 +19,12 @@ export const actions = {
 		const data = Object.fromEntries(await request.formData());
 
 		try {
-			await locals.pb.collection('users2').getFirstListItem(`username = "${data.username}"`);
+			await locals.pb.collection('users').getFirstListItem(`username = "${data.username}"`);
 		} catch (err) {
 			if (err.status === 404) {
 				try {
 					const { username } = await locals.pb
-						.collection('users2')
+						.collection('users')
 						.update(locals.user.id, { username: data.username });
 					locals.user.username = username;
 					return {
