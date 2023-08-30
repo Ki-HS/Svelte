@@ -1,15 +1,23 @@
-import { generateUseranme } from '$lib/utils.js';
-import { error, redirect } from '@sveltejs/kit';
+import { registerUserSchema } from '$lib/schemas.js';
+import { generateUseranme, validateData } from '$lib/utils.js';
+import { error, fail, redirect } from '@sveltejs/kit';
 
 export const actions = {
 	register: async ({ locals, request }) => {
-		const body = Object.fromEntries(await request.formData());
+		const { formData, errors } = await validateData(await request.formData(), registerUserSchema);
 
-		let username = generateUseranme(body.name.split(' ').join('')).toLowerCase();
-		console.log({ username, ...body });
+		if (errors) {
+			return fail(400, {
+				data: formData,
+				errors: errors.fieldErrors
+			});
+		}
+
+		let username = generateUseranme(formData.name.split(' ').join('')).toLowerCase();
+		console.log({ username, ...formData });
 		try {
-			await locals.pb.collection('users').create({ username, ...body });
-			await locals.pb.collection('users').requestVerification(body.email);
+			await locals.pb.collection('users').create({ username, ...formData });
+			await locals.pb.collection('users').requestVerification(formData.email);
 		} catch (err) {
 			console.log(err);
 			throw error(500, 'Something wrong');

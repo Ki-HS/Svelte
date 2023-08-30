@@ -9,13 +9,11 @@
 
     export let errors;
 </script>
-
-<div class="form-control w-full max-w-lg mb-2">
-    <label for={id} class="label font-medium pb-1">
+<div class="form-control w-full max-w-lg">
+    <label for="description" class="label font-medium pb-1">
         <span class="label-text">{label}</span>
     </label>
-    <input {type} {placeholder} {required} {disabled} {id} name={id} {value} class='{type==="file"?"file-input file-input-bordered w-full max-w-lg":"input input-bordered w-full max-w-lg"}'>
-
+    <textarea {type} {placeholder} {required} {disabled} {id} name={id} {value} class="textarea textarea-bordered h-24 resize-none" />
     {#if errors}
         {#each errors as error}
             <label for={id} class="label py-0 pt-1">

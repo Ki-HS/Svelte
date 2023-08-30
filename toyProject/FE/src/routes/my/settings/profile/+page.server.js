@@ -1,4 +1,7 @@
-import { error } from '@sveltejs/kit';
+import { updateProfileSchema } from '$lib/schemas.js';
+import { validateData } from '$lib/utils.js';
+import { error, fail } from '@sveltejs/kit';
+import { serialize } from 'object-to-formdata';
 
 export const actions = {
 	updateProfile: async ({ locals, request }) => {
@@ -8,9 +11,19 @@ export const actions = {
 		if (userAvatar.size === 0) {
 			data.delete('avatar');
 		}
+		const { formData, errors } = await validateData(data, updateProfileSchema);
+		const { avatar, ...rest } = formData;
+		if (errors) {
+			return fail(400, {
+				data: rest,
+				errors: errors.fieldErrors
+			});
+		}
 		//console.log(data);
 		try {
-			const { name, avatar } = await locals.pb.collection('users').update(locals?.user?.id, data);
+			const { name, avatar } = await locals.pb
+				.collection('users')
+				.update(locals?.user?.id, serialize(formData));
 
 			locals.user.name = name;
 			locals.user.avatar = avatar;

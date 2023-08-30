@@ -5,6 +5,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { applyAction, enhance } from '$app/forms';
     export let data;
+    export let form;
     let loading = false
     $:loading =false
 
@@ -50,12 +51,22 @@
                     </span>
                 </label>
                 <div class="w-32 rounded-full">
-                    <img src={data.user?.avatar?getImageURL(data.user?.collectionId, data.user?.id, data.user?.avatar): `https://ui-avatars.com/api/?name=${data.user?.name}`} alt="User Avatar" id ="avatar-preview" />
+                    <img src={data?.user?.avatar?getImageURL(data?.user?.collectionId, data?.user?.id, data?.user?.avatar): `https://ui-avatars.com/api/?name=${data?.user?.name}`} alt="User Avatar" id ="avatar-preview" />
                 </div>
             </label>
-            <input type="file" name="avatar" id="avatar" value ="" accept="image/*" hidden on:change={showPreview} disabled={loading}/>
+            <input type="file" name="avatar" id="avatar" value ="" accept="image/*" hidden on:change={showPreview} disabled={loading} />
+            {#if form?.errors.avatar}
+                    {#each form?.errors?.avatar as error}
+                        <label for="avatar" class="label py-0 pt-1">
+                            <span class="label-text-alt text-error">
+                                {error}
+                            </span>
+                        </label>
+                    {/each}
+                {/if}
+            
         </div>
-        <Input id="name" label="Name" value={data?.user?.name} disabled={loading}/>
+        <Input id="name" label="Name" value={form?.data?.name??data?.user?.name} disabled={loading} errors={form?.errors?.name}/>
         <div class="w-full max-w-lg pt-3">
             <button class="btn btn-primary w-full max-w-lg" type ="submit">
                 Update Profile

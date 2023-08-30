@@ -1,4 +1,7 @@
-import { error, redirect } from '@sveltejs/kit';
+import { createProjectSchema } from '$lib/schemas.js';
+import { validateData } from '$lib/utils.js';
+import { error, fail, redirect } from '@sveltejs/kit';
+import { serialize } from 'object-to-formdata';
 
 export const load = ({ locals }) => {
 	if (!locals.pb.authStore.isValid) {
@@ -8,16 +11,25 @@ export const load = ({ locals }) => {
 
 export const actions = {
 	create: async ({ locals, request }) => {
-		const formData = await request.formData();
-		console.log(locals);
-		const thumbnail = formData.get('thumbnail');
+		const body = await request.formData();
+
+		const thumbnail = body.get('thumbnail');
 		if (thumbnail.size === 0) {
-			formData.delete('thumbnail');
+			body.delete('thumbnail');
+		}
+		body.append('user', locals.user.id);
+
+		const { formData, errors } = await validateData(body, createProjectSchema);
+		const { thumb, ...rest } = formData;
+		if (errors) {
+			return fail(400, {
+				data: rest,
+				errors: errors.fieldErrors
+			});
 		}
 
-		formData.append('user', locals.user.id);
 		try {
-			await locals.pb.collection('projects').create(formData);
+			await locals.pb.collection('projects').create(serialize(formData));
 		} catch (err) {
 			console.log(err);
 			throw error(err.status, err.message);
